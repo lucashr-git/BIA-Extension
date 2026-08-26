@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Bia</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+<div class="app">
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="chat">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span class="tab-label">Chat</span>
+    </button>
+    <button class="tab-btn" data-tab="run">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <span class="tab-label">Executar</span>
+    </button>
+    <button class="tab-btn" data-tab="library">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+        <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+      </svg>
+      <span class="tab-label">Testes</span>
+    </button>
+    <button class="tab-btn" data-tab="debug">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 6h8M8 6a4 4 0 0 0-4 4v1h16v-1a4 4 0 0 0-4-4M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/>
+        <path d="M4 11v2a8 8 0 0 0 16 0v-2"/>
+        <line x1="12" y1="15" x2="12" y2="19"/>
+      </svg>
+      <span class="tab-label">Debug</span>
+    </button>
+    <button class="tab-btn" data-tab="inspect">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
+        <path d="M13 13l6 6"/>
+      </svg>
+      <span class="tab-label">Inspetor</span>
+    </button>
+    <div class="tab-actions">
+      <button id="accessBtn" class="icon-btn" title="Modo acessível: respostas em voz alta e comandos por microfone" aria-pressed="false" aria-label="Ativar ou desativar modo acessível">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="12" cy="7.5" r="1.6" fill="currentColor" stroke="none"/>
+          <path d="M7 10.2l3.4.9v3l-1.6 4.2M17 10.2l-3.4.9v3l1.6 4.2M10.4 14.1h3.2"/>
+        </svg>
+      </button>
+      <button id="settingsBtn" class="icon-btn" title="Configurações" aria-label="Abrir configurações">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+  </nav>
+
+  <div id="tab-chat" class="tab-content active">
+    <div id="chatThread" class="chat-thread">
+      <div id="chatEmpty" class="chat-empty">
+        <img class="chat-empty-logo" src="../../icons/icon128.png" alt="Bia">
+        <p class="empty-title">Converse com a Bia</p>
+        <p class="empty-desc">Peça em linguagem natural e a Bia executa na <strong>aba ativa</strong> e responde aqui.<br>Ex.: "pesquise por notebooks e me diga o primeiro resultado".</p>
+        <div class="chat-empty-brand">
+          <span>Bia · sua agente de IA no navegador</span>
+        </div>
+      </div>
+    </div>
+    <div id="chatConfirm" class="confirm-bar chat-confirm hidden">
+      <div class="confirm-bar-title">⚠️ Confirmação necessária</div>
+      <div id="chatConfirmText" class="confirm-bar-text"></div>
+      <div class="confirm-bar-actions">
+        <button id="chatConfirmApprove" class="btn-confirm-approve">✓ Aprovar e continuar</button>
+        <button id="chatConfirmDeny" class="btn-confirm-deny">✕ Negar</button>
+      </div>
+    </div>
+    <div class="chat-composer">
+      <div class="chat-composer-box">
+        <textarea id="chatInput" rows="1" placeholder="Peça algo à Bia…"></textarea>
+        <div class="chat-composer-bar">
+          <div class="chat-composer-tools">
+            <div class="composer-picker">
+              <button id="chatModeBtn" class="composer-pill" type="button" aria-haspopup="menu" aria-expanded="false" title="Modo da conversa">
+                <span id="chatModeLabel">Agente</span>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div id="chatModeMenu" class="composer-menu hidden" role="menu" aria-labelledby="chatModeBtn"></div>
+            </div>
+            <button id="chatNewBtn" class="chat-tool-btn" title="Nova conversa" aria-label="Nova conversa">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button id="chatHistoryBtn" class="chat-tool-btn" title="Histórico de conversas" aria-label="Histórico de conversas">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </button>
+            <div class="composer-picker">
+              <button id="chatModelBtn" class="composer-pill" type="button" aria-haspopup="menu" aria-expanded="false" title="Modelo usado no chat">
+                <span id="chatModelLabel">Padrão</span>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div id="chatModelMenu" class="composer-menu hidden" role="menu" aria-labelledby="chatModelBtn"></div>
+            </div>
+            <button id="chatMicBtn" class="chat-tool-btn hidden" title="Falar com a Bia" aria-label="Falar com a Bia pelo microfone">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+          </div>
+          <span class="chat-composer-hint"><span class="hint-full">Enter envia · Shift+Enter quebra linha</span><span class="hint-short">Enter envia</span></span>
+          <button id="chatSendBtn" class="chat-send-btn" title="Enviar" aria-label="Enviar mensagem">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+          <button id="chatStopBtn" class="chat-send-btn chat-stop-btn hidden" title="Parar" aria-label="Parar execução">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="srAnnouncer" class="sr-only" aria-live="polite" role="status"></div>
+  </div>
+
+  <div id="tab-run" class="tab-content">
+
+    <div id="runIdle" class="run-section">
+      <div class="input-header">
+        <span class="input-hint">Ctrl+Enter para executar</span>
+      </div>
+      <div class="run-toolbar">
+        <select id="envSelect" class="env-select" title="Ambiente ativo (variáveis {{nome}})">
+          <option value="">Sem ambiente</option>
+        </select>
+        <button id="recordBtn" class="btn-record" title="Gravar suas ações na página e gerar o test case automaticamente">
+          <span class="record-dot-idle"></span> Gravar
+        </button>
+      </div>
+      <textarea id="testInput" class="test-textarea"
+        placeholder="Descreva o que testar em linguagem natural, ou escreva os steps numerados:
+
+1. Acesse /login
+2. Preencha e-mail com qa@empresa.com
+3. Preencha a senha
+4. Clique em Entrar
+5. Verifique que a URL muda para /dashboard
+6. Verifique que o nome do usuário está no header"></textarea>
+      <details id="datasetDetails" class="dataset-details">
+        <summary>Dados — data-driven (opcional)</summary>
+        <textarea id="datasetInput" class="dataset-textarea"
+          placeholder='[{"email": "a@empresa.com", "senha": "123"}, {"email": "b@empresa.com", "senha": "456"}]'></textarea>
+        <p class="form-hint">Use <code>{{campo}}</code> no test case. Cada objeto do array executa o teste uma vez.</p>
+      </details>
+      <div id="runError" class="run-error hidden"></div>
+      <button id="runBtn" class="btn-run" disabled>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        Executar Teste
+      </button>
+    </div>
+
+    <div id="confirmBar" class="confirm-bar hidden">
+      <div class="confirm-bar-title">⚠️ Confirmação necessária</div>
+      <div id="confirmBarText" class="confirm-bar-text"></div>
+      <div class="confirm-bar-actions">
+        <button id="confirmApproveBtn" class="btn-confirm-approve">✓ Aprovar e continuar</button>
+        <button id="confirmDenyBtn" class="btn-confirm-deny">✕ Negar</button>
+      </div>
+    </div>
+
+    <div id="runRunning" class="run-section hidden">
+      <div class="running-bar">
+        <div class="running-left">
+          <div class="spinner"></div>
+          <span id="runningStatusText" class="running-status-text">Iniciando...</span>
+        </div>
+        <button id="stopBtn" class="btn-stop">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          Parar
+        </button>
+      </div>
+      <div id="liveStepsList" class="live-steps"></div>
+    </div>
+
+    <div id="runRecording" class="run-section hidden">
+      <div class="recording-bar">
+        <div class="running-left">
+          <span class="record-dot"></span>
+          <span id="recordingStatusText" class="running-status-text">Gravando… 0 ações capturadas</span>
+        </div>
+        <button id="recordStopBtn" class="btn-stop">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          Parar e gerar
+        </button>
+      </div>
+      <p class="recording-hint">Use a página normalmente — cliques, digitação, seleções e navegação estão sendo capturados. Ao parar, o test case é gerado aqui para você revisar e salvar.</p>
+    </div>
+
+    <div id="runBatch" class="run-section hidden">
+      <div class="running-bar">
+        <div class="running-left">
+          <div class="spinner"></div>
+          <span id="batchStatusText" class="running-status-text">Executando lote...</span>
+        </div>
+        <button id="batchStopBtn" class="btn-stop">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          Parar
+        </button>
+      </div>
+      <div id="batchProgressList" class="live-steps"></div>
+    </div>
+
+    <div id="runBatchResult" class="run-section hidden">
+      <div id="batchSummary"></div>
+      <div id="batchResultList" class="batch-result-list"></div>
+      <div class="result-actions">
+        <div class="result-row">
+          <button id="batchPdfBtn" class="btn-outline">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-16 9v2h18v-2H3z"/></svg>
+            PDF
+          </button>
+          <button id="batchJsonBtn" class="btn-outline">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-16 9v2h18v-2H3z"/></svg>
+            JSON
+          </button>
+          <button id="batchNewBtn" class="btn-ghost">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Novo
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="runResult" class="run-section hidden">
+      <div id="resultVerdict" class="result-verdict"></div>
+      <div id="resultStepsList" class="result-steps"></div>
+      <details id="resultAIDetails" class="result-ai-details hidden">
+        <summary>
+          <span>Ver análise do agente</span>
+          <button id="copyAIBtn" class="copy-ai-btn" title="Copiar análise">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+        </summary>
+        <div id="resultAIText" class="result-ai-text"></div>
+      </details>
+      <details id="videoDetails" class="video-details hidden">
+        <summary>🎬 Vídeo da execução</summary>
+        <video id="runVideo" controls></video>
+        <button id="videoDownloadBtn" class="btn-outline" style="margin-top:6px">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-16 9v2h18v-2H3z"/></svg>
+          Baixar .webm
+        </button>
+      </details>
+      <div id="visualDiffArea" class="visual-diff hidden"></div>
+      <div id="zephyrPushArea" class="zephyr-push hidden">
+        <span class="zephyr-push-label">🔄 <b id="zephyrPushKey"></b></span>
+        <select id="zephyrCycleSelect"><option value="">Sem ciclo</option></select>
+        <button id="zephyrPushBtn" class="btn-zephyr-push">Enviar ao Zephyr</button>
+        <label class="zephyr-auto-push" title="Enviar o resultado ao Zephyr automaticamente ao fim de cada execução (cria o test case se ainda não existir)">
+          <input type="checkbox" id="zephyrAutoPushCheck"> Auto
+        </label>
+      </div>
+      <div class="result-actions">
+        <button id="resultJiraBtn" class="btn-jira-main hidden">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.96 4.34 4.34 4.35V2.84a.84.84 0 0 0-.84-.84H11.53zm-4.6 4.6c0 2.4 1.96 4.34 4.35 4.35h1.78v1.71c0 2.4 1.96 4.35 4.35 4.35V7.44a.84.84 0 0 0-.84-.84H6.93zm-4.6 4.6c0 2.4 1.97 4.34 4.35 4.34h1.78v1.71c0 2.39 1.96 4.34 4.35 4.34v-9.55a.84.84 0 0 0-.84-.84H2.33z"/></svg>
+          Criar Bug no Jira
+        </button>
+        <div class="result-row">
+          <button id="resultSaveBtn" class="btn-outline">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Salvar Teste
+          </button>
+          <button id="resultBugBtn" class="btn-outline">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h8M8 6a4 4 0 0 0-4 4v1h16v-1a4 4 0 0 0-4-4M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M4 11v2a8 8 0 0 0 16 0v-2"/><line x1="12" y1="15" x2="12" y2="19"/></svg>
+            Bug Report
+          </button>
+          <button id="resultPdfBtn" class="btn-outline">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-16 9v2h18v-2H3z"/></svg>
+            PDF
+          </button>
+          <button id="resultNewBtn" class="btn-ghost">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Novo
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="tab-library" class="tab-content">
+    <div class="library-topbar">
+      <input id="librarySearch" type="search" class="library-search" placeholder="Buscar por nome, tag ou suite...">
+      <button id="suggestBtn" class="btn-suggest" title="A IA analisa a página atual e sugere test cases">💡 Sugerir</button>
+    </div>
+    <div id="suggestBox" class="suggest-box hidden"></div>
+    <div id="libraryBatchBar" class="library-batch-bar hidden">
+      <span id="librarySelCount">0 selecionados</span>
+      <div class="batch-opts">
+        <select id="batchRepeatSelect" title="Repetições por teste — 3× ou 5× para detectar flaky tests">
+          <option value="1">1×</option>
+          <option value="3">3×</option>
+          <option value="5">5×</option>
+        </select>
+        <select id="batchParallelSelect" title="Execução paralela em abas separadas (cada teste roda numa aba própria a partir da página atual)">
+          <option value="1">seq.</option>
+          <option value="2">2 abas</option>
+          <option value="3">3 abas</option>
+        </select>
+        <label class="batch-envs-label" title="Roda cada teste em TODOS os ambientes configurados e compara">
+          <input type="checkbox" id="batchAllEnvs"> ambientes
+        </label>
+        <button id="libraryRunSelectedBtn" class="btn-run-selected">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          Executar
+        </button>
+      </div>
+    </div>
+    <div id="libraryList" class="library-list"></div>
+    <div id="libraryEmpty" class="empty-state hidden">
+      <div class="empty-icon">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+          <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+        </svg>
+      </div>
+      <p class="empty-title">Nenhum teste salvo</p>
+      <p class="empty-desc">Execute um teste na aba <strong>Executar</strong> e clique em "Salvar Teste" para reutilizá-lo aqui.</p>
+    </div>
+  </div>
+
+  <div id="tab-debug" class="tab-content">
+
+    <div id="debugIdle" class="debug-intro-wrap">
+      <div class="debug-intro">
+        <div class="debug-intro-icon">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 6h8M8 6a4 4 0 0 0-4 4v1h16v-1a4 4 0 0 0-4-4M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/>
+            <path d="M4 11v2a8 8 0 0 0 16 0v-2"/>
+            <line x1="12" y1="15" x2="12" y2="19"/>
+            <line x1="4" y1="8" x2="2" y2="6"/>
+            <line x1="20" y1="8" x2="22" y2="6"/>
+          </svg>
+        </div>
+        <p class="debug-intro-title">Análise de Qualidade</p>
+        <p class="debug-intro-desc">Inspeciona a página atual e detecta automaticamente problemas de segurança, acessibilidade, performance e erros de JavaScript.</p>
+        <div class="debug-tags">
+          <span>🔒 Segurança</span><span>♿ Acessibilidade</span>
+          <span>⚡ Performance</span><span>🔑 Tokens JWT</span>
+          <span>🌐 Network</span><span>⚠️ Erros JS</span>
+        </div>
+      </div>
+      <button id="debugRunBtn" class="btn-debug">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        Analisar Página
+      </button>
+    </div>
+
+    <div id="debugRunning" class="hidden">
+      <div class="loading-wrap">
+        <div class="spinner spinner-lg"></div>
+        <p>Coletando dados da página...</p>
+      </div>
+    </div>
+
+    <div id="debugResult" class="hidden"></div>
+
+  </div>
+
+  <div id="tab-inspect" class="tab-content">
+
+    <div class="inspect-section">
+      <div class="inspect-header">
+        <div>
+          <p class="inspect-title">Inspetor de Elementos</p>
+          <p class="inspect-desc">Ative e clique em qualquer elemento da página para capturar o melhor seletor.</p>
+        </div>
+        <button id="inspectToggleBtn" class="btn-inspect">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/>
+          </svg>
+          <span id="inspectToggleLabel">Inspecionar</span>
+        </button>
+      </div>
+
+      <div id="inspectedCard" class="inspected-card hidden">
+        <div class="inspected-selector-row">
+          <code id="inspectedSelector" class="inspected-selector"></code>
+          <button id="copySelectorBtn" class="copy-selector-btn" title="Copiar seletor">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+        </div>
+        <div id="inspectedDetails" class="inspected-details"></div>
+      </div>
+
+      <div id="inspectEmpty" class="inspect-empty">
+        <p>Nenhum elemento inspecionado ainda.</p>
+      </div>
+    </div>
+
+    <div class="inspect-section">
+      <div class="inspect-header">
+        <div>
+          <p class="inspect-title">Contexto da Página</p>
+          <p class="inspect-desc">O que a IA enxerga: elementos detectados, console e rede em tempo real.</p>
+        </div>
+        <button id="contextRefreshBtn" class="btn-inspect">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+          Atualizar
+        </button>
+      </div>
+      <div id="contextContent" class="context-content">
+        <p class="inspect-empty-inline">Clique em "Atualizar" para capturar o contexto da aba ativa.</p>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+
+<div id="chatHistoryOverlay" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span>🕘 Histórico de conversas</span>
+      <button id="closeChatHistory" class="icon-btn">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="chatHistoryList" class="chat-history-list"></div>
+      <div id="chatHistoryEmpty" class="chat-history-empty hidden">Nenhuma conversa salva ainda.<br>Converse com a Bia e ela aparecerá aqui.</div>
+    </div>
+  </div>
+</div>
+
+<div id="bugReportOverlay" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span>🐛 Bug Report</span>
+      <button id="closeBugModal" class="icon-btn">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Título</label>
+        <input type="text" id="bugTitle" placeholder="Descreva o bug em uma linha">
+      </div>
+      <div class="form-group">
+        <label>URL</label>
+        <input type="text" id="bugUrl" readonly>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Ambiente</label>
+          <select id="bugEnv" class="form-select">
+            <option>Staging</option><option>QA</option>
+            <option>Dev</option><option>Produção</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Severidade</label>
+          <select id="bugSeverity" class="form-select">
+            <option>Crítica</option><option>Alta</option>
+            <option selected>Média</option><option>Baixa</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Passos para reproduzir</label>
+        <textarea id="bugSteps" rows="4" placeholder="1. Acesse...&#10;2. Clique em...&#10;3. Observe que..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Comportamento observado</label>
+        <textarea id="bugActual" rows="3" placeholder="O que aconteceu..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Comportamento esperado</label>
+        <textarea id="bugExpected" rows="2" placeholder="O que deveria acontecer..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="bugJiraBtn" class="btn-jira hidden">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.96 4.34 4.34 4.35V2.84a.84.84 0 0 0-.84-.84H11.53zm-4.6 4.6c0 2.4 1.96 4.34 4.35 4.35h1.78v1.71c0 2.4 1.96 4.35 4.35 4.35V7.44a.84.84 0 0 0-.84-.84H6.93zm-4.6 4.6c0 2.4 1.97 4.34 4.35 4.34h1.78v1.71c0 2.39 1.96 4.34 4.35 4.34v-9.55a.84.84 0 0 0-.84-.84H2.33z"/></svg>
+        Criar no Jira
+      </button>
+      <button id="bugDownloadBtn" class="btn-primary">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-16 9v2h18v-2H3z"/></svg>
+        Baixar .md
+      </button>
+      <button id="bugCopyBtn" class="btn-secondary-sm">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+        Copiar
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="authGate" class="auth-gate hidden">
+  <div class="auth-gate-box">
+    <div class="auth-gate-mark" aria-hidden="true">✳</div>
+    <h1 class="auth-gate-brand">Bia</h1>
+    <p class="auth-gate-text">Acesso restrito. Entre com sua conta Google @ciandt.com para continuar.</p>
+    <div id="authGateError" class="auth-gate-error hidden"></div>
+    <button id="authSignInBtn" class="auth-gate-btn" type="button">Entrar com Google</button>
+  </div>
+</div>
+
+<script src="../vendor/fix-webm-duration.js"></script>
+<script src="sidepanel.js" type="module"></script>
+</body>
+</html>

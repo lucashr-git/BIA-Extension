@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Bia — Dashboard</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+<div class="dash">
+
+  <header class="dash-header">
+    <div class="dash-brand">
+      <span class="dash-mark" aria-hidden="true">✳</span>
+      <h1><b>Bia</b> <span class="dash-sub">Dashboard</span></h1>
+    </div>
+    <span id="statusMsg" class="status-msg"></span>
+    <div id="authUserBox" class="auth-user-box hidden">
+      <span id="authUserEmail" class="auth-user-email"></span>
+      <button id="authSignOutBtn" class="auth-signout-btn" type="button">Sair</button>
+    </div>
+    <button id="darkToggleBtn" class="icon-btn" title="Alternar tema">🌙</button>
+  </header>
+
+  <nav class="dash-tabs">
+    <button class="dash-tab active" data-tab="config">⚙️ Configurações</button>
+    <button class="dash-tab" data-tab="metrics">📈 Métricas</button>
+    <button class="dash-tab" data-tab="features">🧩 Funcionalidades</button>
+    <button class="dash-tab" data-tab="templates">🧰 Templates</button>
+    <button class="dash-tab" data-tab="manual">📖 Manual</button>
+  </nav>
+
+  <main id="tab-config" class="dash-tab-content active">
+    <div class="dash-grid">
+
+      <section class="card">
+        <h2>🤖 Agente</h2>
+        <div class="form-group">
+          <label>API Key</label>
+          <input type="password" id="apiKey" placeholder="Cole sua API Key aqui">
+        </div>
+        <div class="form-row">
+          <div class="form-group form-narrow">
+            <label>Limite de ciclos</label>
+            <input type="number" id="maxStepsInput" min="5" max="60" value="25">
+          </div>
+        </div>
+        <p class="form-hint">O modelo é escolhido direto no chat, no seletor ao lado do relógio — cada conversa pode usar um. Nas execuções automáticas, vale o "Modelo do agente" abaixo.</p>
+        <div class="form-group">
+          <label>Modelo do agente</label>
+          <select id="modelModeSelect">
+            <option value="auto">Auto — rápido com qualidade (recomendado)</option>
+            <option value="sonnet">Sonnet — qualidade máxima</option>
+            <option value="haiku">Haiku — máxima velocidade</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Tema</label>
+            <select id="themeSelect">
+              <option value="system">Seguir o sistema</option>
+              <option value="light">Claro</option>
+              <option value="dark">Escuro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Idioma / Language</label>
+            <select id="langSelect">
+              <option value="pt">🇧🇷 Português (Brasil)</option>
+              <option value="en">🇺🇸 English</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Vídeo da execução</label>
+          <label class="check-inline"><input type="checkbox" id="videoEnabled"> Gravar vídeo das execuções</label>
+          <label class="check-inline"><input type="checkbox" id="videoAutoSave"> Baixar automaticamente ao concluir</label>
+        </div>
+        <div class="form-group">
+          <label>Onde salvar vídeos e prints</label>
+          <input type="text" id="downloadFolder" placeholder="Ex.: flow-qa (subpasta dentro de Downloads)">
+          <label class="check-inline"><input type="checkbox" id="downloadAskWhere"> Perguntar onde salvar a cada download</label>
+          <p class="form-hint">O Chrome só grava dentro de Downloads sem abrir o seletor de pasta — marque "Perguntar" para escolher qualquer pasta a cada vez.</p>
+        </div>
+        <div class="form-group">
+          <label>Gateway URL <span class="badge-optional">opcional</span></label>
+          <input type="text" id="gatewayUrlInput" placeholder="Ex.: https://api.anthropic.com ou o seu gateway LiteLLM">
+          <p class="form-hint">Vazio = API direta da Anthropic. Aceita qualquer gateway compatível (LiteLLM etc.) — a API key deve ser do provedor configurado.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>🌍 Ambientes</h2>
+        <div class="form-group">
+          <label>Environments (JSON)</label>
+          <textarea id="environmentsInput" class="mono-textarea"
+            placeholder='{"staging": {"baseUrl": "https://staging.app.com", "usuario": "qa@empresa.com", "senha": "..."},&#10; "prod": {"baseUrl": "https://app.com"}}'></textarea>
+          <p class="form-hint">Variáveis disponíveis como <code>{{nome}}</code> no test case. O ambiente ativo é escolhido na aba Executar do painel.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>🐛 Jira <span class="badge-optional">opcional</span></h2>
+        <div class="form-group">
+          <label>URL do Jira</label>
+          <input type="text" id="jiraUrl" placeholder="https://empresa.atlassian.net">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>E-mail</label>
+            <input type="text" id="jiraEmail" placeholder="seu@email.com">
+          </div>
+          <div class="form-group form-narrow">
+            <label>Project Key</label>
+            <input type="text" id="jiraProjectKey" placeholder="PROJ">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>API Token <a class="link-sm" href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">gerar →</a></label>
+          <input type="password" id="jiraToken" placeholder="Token do Jira">
+          <p class="form-hint">E-mail em branco = token usado como Personal Access Token (Jira Server/DC).</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>🔄 Zephyr Scale <span class="badge-optional">opcional</span></h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>API Token</label>
+            <input type="password" id="zephyrToken" placeholder="Token do Zephyr Scale">
+          </div>
+          <div class="form-group form-narrow">
+            <label>Project Key</label>
+            <input type="text" id="zephyrProjectKey" placeholder="PROJ">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Base URL <span class="badge-optional">opcional</span></label>
+          <input type="text" id="zephyrBaseUrl" placeholder="https://api.zephyrscale.smartbear.com/v2">
+        </div>
+        <div class="zephyr-import">
+          <label>Exportar teste da biblioteca para o Zephyr</label>
+          <div class="form-row">
+            <select id="zephyrExportSelect"><option value="">Selecione um teste…</option></select>
+            <button id="zephyrExportBtn" class="btn-secondary">⬆ Exportar</button>
+          </div>
+          <p id="zephyrExportStatus" class="form-hint"></p>
+        </div>
+        <div class="zephyr-import">
+          <label>Importar test case do Zephyr para a biblioteca</label>
+          <div class="form-row">
+            <input type="text" id="zephyrImportKey" placeholder="Chave do TC (ex.: PROJ-T123)">
+            <button id="zephyrImportBtn" class="btn-secondary">⬇ Importar</button>
+          </div>
+          <p id="zephyrImportStatus" class="form-hint"></p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>📚 Biblioteca de testes</h2>
+        <p id="libraryStats" class="library-stats">—</p>
+        <div class="form-row">
+          <button id="exportLibraryBtn" class="btn-secondary">⬆ Exportar JSON</button>
+          <button id="importLibraryBtn" class="btn-secondary">⬇ Importar JSON</button>
+          <input type="file" id="importLibraryFile" accept="application/json" class="hidden">
+        </div>
+        <p class="form-hint">Exporte para versionar/compartilhar os test cases com o time; a importação mescla pelos ids (não duplica).</p>
+      </section>
+
+    </div>
+  </main>
+
+  <main id="tab-metrics" class="dash-tab-content">
+    <div id="metricsContent" class="metrics"></div>
+  </main>
+
+  <main id="tab-features" class="dash-tab-content">
+    <section class="card card-wide">
+      <h2>👤 Perfis rápidos</h2>
+      <p class="form-hint" style="margin-bottom:10px">Aplique um preset de funcionalidades de acordo com quem usa a extensão — depois ajuste os interruptores individualmente se quiser.</p>
+      <div id="presetRow" class="preset-row"></div>
+    </section>
+    <section class="card card-wide">
+      <h2>🧩 Funcionalidades da extensão</h2>
+      <p class="form-hint" style="margin-bottom:14px">Desligue o que o seu time não usa — o recurso some do painel na hora e volta quando você reativar. As mudanças são salvas automaticamente.</p>
+      <div id="featureList" class="feature-list"></div>
+    </section>
+  </main>
+
+  <main id="tab-templates" class="dash-tab-content">
+    <div id="templatesContent" class="templates"></div>
+  </main>
+
+  <main id="tab-manual" class="dash-tab-content">
+    <div class="manual" id="manualContent"></div>
+  </main>
+
+  <footer class="dash-footer" id="configFooter">
+    <button id="saveBtn" class="btn-save">Salvar configurações</button>
+  </footer>
+
+</div>
+
+<div id="authGate" class="auth-gate hidden">
+  <div class="auth-gate-box">
+    <div class="auth-gate-mark" aria-hidden="true">✳</div>
+    <h1 class="auth-gate-brand">Bia</h1>
+    <p class="auth-gate-text">Acesso restrito. Entre com sua conta Google @ciandt.com para continuar.</p>
+    <div id="authGateError" class="auth-gate-error hidden"></div>
+    <button id="authSignInBtn" class="auth-gate-btn" type="button">Entrar com Google</button>
+  </div>
+</div>
+
+<script src="options.js" type="module"></script>
+</body>
+</html>
