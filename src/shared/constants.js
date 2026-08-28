@@ -1,9 +1,3 @@
-// Client ID OAuth do Google (tipo Web application, redirect
-// https://<EXTENSION_ID>.chromiumapp.org/). VAZIO = trava de login DESLIGADA (modo
-// dev/open-source). Preencha antes de empacotar para a Web Store.
-export const OIDC_CLIENT_ID = '1028636434924-ai38ekc9to5qi9iom64sabt3o75513gk.apps.googleusercontent.com';
-export const OIDC_ALLOWED_DOMAIN = 'ciandt.com';
-
 // Modelo dos testes da aba Executar (o chat tem o seletor próprio no composer).
 // Não há mais campo de texto nas Configurações: um valor antigo em storage.model
 // continua sendo respeitado, e quem não tiver nenhum cai aqui.

@@ -163,46 +163,8 @@ document.addEventListener('DOMContentLoaded', () => {
     rehydrateRunState();
     restoreChatThread();
     loadAccessibilityMode();
-    initAuthGate();
   });
 });
-
-// Trava de login Google (OIDC), restrita a @ciandt.com. Se OIDC_CLIENT_ID estiver vazio
-// (modo dev/open-source), o background responde { required: false } e este overlay nunca
-// aparece — nada muda no comportamento atual.
-function initAuthGate() {
-  const gate = $('authGate');
-  const signInBtn = $('authSignInBtn');
-  const errorEl = $('authGateError');
-  if (!gate || !signInBtn) return;
-
-  chrome.runtime.sendMessage({ action: 'authStatus' }, (res) => {
-    if (chrome.runtime.lastError) return;
-    if (res?.required && !res?.session) gate.classList.remove('hidden');
-    else gate.classList.add('hidden');
-  });
-
-  signInBtn.addEventListener('click', () => {
-    signInBtn.disabled = true;
-    signInBtn.textContent = 'Entrando…';
-    errorEl.classList.add('hidden');
-    chrome.runtime.sendMessage({ action: 'authSignIn' }, (res) => {
-      signInBtn.disabled = false;
-      signInBtn.textContent = 'Entrar com Google';
-      if (chrome.runtime.lastError) {
-        errorEl.textContent = 'Não foi possível entrar. Tente novamente.';
-        errorEl.classList.remove('hidden');
-        return;
-      }
-      if (res?.success) {
-        gate.classList.add('hidden');
-        return;
-      }
-      errorEl.textContent = res?.message || 'Não foi possível entrar. Tente novamente.';
-      errorEl.classList.remove('hidden');
-    });
-  });
-}
 
 let themeMode = 'system';
 const systemDarkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1840,7 +1802,7 @@ function exportBatchJson() {
     })),
   };
   downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
-    `flow-qa-lote-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`);
+    `bia-qa-lote-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`);
 }
 
 function exportBatchPdf() {
@@ -2429,7 +2391,7 @@ function downloadBlob(blob, filename) {
 
 function downloadVideoFile() {
   if (!lastVideoUrl) return;
-  saveDownload(lastVideoUrl, `flow-qa-execucao-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.webm`);
+  saveDownload(lastVideoUrl, `bia-qa-execucao-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.webm`);
 }
 
 async function presentVideoResult() {

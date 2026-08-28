@@ -14,10 +14,6 @@
       <h1><b>Bia</b> <span class="dash-sub">Dashboard</span></h1>
     </div>
     <span id="statusMsg" class="status-msg"></span>
-    <div id="authUserBox" class="auth-user-box hidden">
-      <span id="authUserEmail" class="auth-user-email"></span>
-      <button id="authSignOutBtn" class="auth-signout-btn" type="button">Sair</button>
-    </div>
     <button id="darkToggleBtn" class="icon-btn" title="Alternar tema">🌙</button>
   </header>
 
@@ -77,14 +73,14 @@
         </div>
         <div class="form-group">
           <label>Onde salvar vídeos e prints</label>
-          <input type="text" id="downloadFolder" placeholder="Ex.: flow-qa (subpasta dentro de Downloads)">
+          <input type="text" id="downloadFolder" placeholder="Ex.: bia-qa (subpasta dentro de Downloads)">
           <label class="check-inline"><input type="checkbox" id="downloadAskWhere"> Perguntar onde salvar a cada download</label>
           <p class="form-hint">O Chrome só grava dentro de Downloads sem abrir o seletor de pasta — marque "Perguntar" para escolher qualquer pasta a cada vez.</p>
         </div>
         <div class="form-group">
-          <label>Gateway URL <span class="badge-optional">opcional</span></label>
-          <input type="text" id="gatewayUrlInput" placeholder="Ex.: https://api.anthropic.com ou o seu gateway LiteLLM">
-          <p class="form-hint">Vazio = API direta da Anthropic. Aceita qualquer gateway compatível (LiteLLM etc.) — a API key deve ser do provedor configurado.</p>
+          <label>Gateway URL</label>
+          <input type="text" id="gatewayUrlInput" placeholder="Ex.: https://api.anthropic.com ou seu gateway">
+          <p class="form-hint">Vazio = API direta da Anthropic. Aceita qualquer gateway compatível — a API key deve ser do provedor configurado.</p>
         </div>
       </section>
 
@@ -198,16 +194,6 @@
     <button id="saveBtn" class="btn-save">Salvar configurações</button>
   </footer>
 
-</div>
-
-<div id="authGate" class="auth-gate hidden">
-  <div class="auth-gate-box">
-    <div class="auth-gate-mark" aria-hidden="true">✳</div>
-    <h1 class="auth-gate-brand">Bia</h1>
-    <p class="auth-gate-text">Acesso restrito. Entre com sua conta Google @ciandt.com para continuar.</p>
-    <div id="authGateError" class="auth-gate-error hidden"></div>
-    <button id="authSignInBtn" class="auth-gate-btn" type="button">Entrar com Google</button>
-  </div>
 </div>
 
 <script src="options.js" type="module"></script>

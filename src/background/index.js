@@ -11,7 +11,6 @@ import { recordRuns } from './history.js';
 import { captureScreen } from './page.js';
 import { scanPage } from './contentBridge.js';
 import { callClaude, listGatewayModels, EFFORT_LOW } from './gateway.js';
-import { isAuthRequired, getAuthState, signIn, signOut } from './auth.js';
 
 const CONFIG_FIELDS = {
   apiKey:           'DEFAULT_API_KEY',
@@ -52,15 +51,6 @@ async function loadLocalConfig() {
     }
     if (Object.keys(toSet).length > 0) chrome.storage.local.set(toSet);
   });
-}
-
-// Defesa em profundidade: a UI já bloqueia com o overlay de login, mas os handlers que
-// disparam o agente também checam aqui — caso a extensão receba uma mensagem via DevTools
-// ou qualquer outro caminho que não passe pela UI.
-async function isAuthBlocked() {
-  if (!isAuthRequired()) return false;
-  const session = await getAuthState();
-  return !session;
 }
 
 function withTargetTab(reqTabId, cb) {
@@ -460,9 +450,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === 'chat') {
-    isAuthBlocked().then((blocked) => {
-      if (blocked) { sendResponse({ error: 'auth_required' }); return; }
-      withTargetTab(req.tabId, (tab) => {
+    withTargetTab(req.tabId, (tab) => {
       if (!tab) { sendResponse({ error: 'Nenhuma aba ativa' }); return; }
       if (isRestrictedUrl(tab.url)) {
         sendResponse({ error: `Esta página não pode ser testada (${tab.url || 'sem URL'}). Abra a página web que quer testar e execute novamente.` });
@@ -481,7 +469,6 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         }
         startAgentRun(tab, s, req.messages, req.meta || null);
         sendResponse({ started: true, tabId: tab.id });
-      });
       });
     });
     return true;
@@ -678,12 +665,9 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     const mode = normalizeChatMode(req.mode);
     const text = String(req.text || '').trim();
 
-    isAuthBlocked().then((blocked) => {
-    if (blocked) { sendResponse({ error: 'auth_required' }); return; }
-
     // O Tradutor não toca na página: funciona em qualquer aba, inclusive chrome:// e sem aba nenhuma.
     if (mode === 'translate') {
-      if (!text) { sendResponse({ error: 'Mensagem vazia' }); return; }
+      if (!text) { sendResponse({ error: 'Mensagem vazia' }); return true; }
       chrome.storage.local.get(['apiKey', 'model', 'chatModel', 'gatewayUrl'], (s) => {
         if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
         withTargetTab(req.tabId, (tab) => {
@@ -691,7 +675,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           sendResponse({ started: true, tabId: tab?.id ?? null });
         });
       });
-      return;
+      return true;
     }
 
     withTargetTab(req.tabId, (tab) => {
@@ -714,7 +698,6 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         startChatRun(tab, s, text, mode).catch(() => {});
         sendResponse({ started: true, tabId: tab.id });
       });
-    });
     });
     return true;
   }
@@ -786,29 +769,6 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     cancelAllAgentLoops();
     cancelTranslate();
     sendResponse({ success: true });
-    return true;
-  }
-
-  if (req.action === 'authStatus') {
-    (async () => {
-      const required = isAuthRequired();
-      const session = required ? await getAuthState() : null;
-      sendResponse({ required, session });
-    })();
-    return true;
-  }
-
-  if (req.action === 'authSignIn') {
-    signIn()
-      .then((result) => sendResponse(result))
-      .catch((e) => sendResponse({ success: false, error: 'generic', message: e.message }));
-    return true;
-  }
-
-  if (req.action === 'authSignOut') {
-    signOut()
-      .then((result) => sendResponse(result))
-      .catch((e) => sendResponse({ success: false, message: e.message }));
     return true;
   }
 });
