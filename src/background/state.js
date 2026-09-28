@@ -20,14 +20,21 @@ function clearCredentialSessionArtifacts(credentialSessionId) {
   } catch (_) {}
 }
 
+// O Chrome não popula sender.documentId em páginas de extensão — o side panel é uma —
+// só em frames de conteúdo. Exigi-lo aqui rejeitava TODO login, com qualquer credencial.
+// Vira vínculo best-effort: normalizado para '' quando ausente, e comparado do mesmo
+// jeito nos dois lados. Quem prende a sessão de fato é o par senderUrl (fixo em
+// sidepanel.html, checado no onConnect) + o id de sessão aleatório.
+const normalizeDocumentId = (value) => (typeof value === 'string' ? value : '');
+
 export function createCredentialSession(port, documentId, senderUrl, apiKey) {
-  if (!port || typeof documentId !== 'string' || !documentId || typeof senderUrl !== 'string' || !senderUrl || typeof apiKey !== 'string' || !apiKey.trim()) {
+  if (!port || typeof senderUrl !== 'string' || !senderUrl || typeof apiKey !== 'string' || !apiKey.trim()) {
     return null;
   }
   const credentialSessionId = newCredentialSessionId();
   credentialSessions.set(credentialSessionId, {
     port,
-    documentId,
+    documentId: normalizeDocumentId(documentId),
     senderUrl,
     apiKey: apiKey.trim(),
     connected: true,
@@ -41,7 +48,7 @@ export function requireCredentialSession(req, sender) {
     ? req.credentialSessionId
     : '';
   const session = credentialSessions.get(credentialSessionId);
-  if (!session || !session.connected || session.documentId !== sender?.documentId || session.senderUrl !== sender?.url || !session.port) {
+  if (!session || !session.connected || session.documentId !== normalizeDocumentId(sender?.documentId) || session.senderUrl !== sender?.url || !session.port) {
     return { error: 'credential_required' };
   }
   return { credentialSessionId, apiKey: session.apiKey };
