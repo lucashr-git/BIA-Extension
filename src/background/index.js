@@ -14,7 +14,6 @@ import { callClaude, listGatewayModels, EFFORT_LOW } from './gateway.js';
 
 const CONFIG_FIELDS = {
   model:            'DEFAULT_MODEL',
-  gatewayUrl:       'GATEWAY_URL',
   jiraUrl:          'JIRA_URL',
   jiraEmail:        'JIRA_EMAIL',
   jiraToken:        'JIRA_TOKEN',
@@ -26,7 +25,9 @@ const CONFIG_FIELDS = {
 
 async function removeLegacyCredentialStorage() {
   await Promise.all([
-    chrome.storage.local.remove(['apiKey', 'authSession']).catch(() => {}),
+    // gatewayUrl: o gateway virou fixo (GATEWAY_URL em gateway.js); um valor salvo
+    // por versões antigas não é mais lido, some daqui para não confundir no DevTools.
+    chrome.storage.local.remove(['apiKey', 'authSession', 'gatewayUrl']).catch(() => {}),
     chrome.storage.session.remove(['apiKey', 'authSession']).catch(() => {}),
   ]);
 }
@@ -97,10 +98,13 @@ chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'bia-credential-session') return;
   const trustedSidePanelUrl = chrome.runtime.getURL('src/sidepanel/sidepanel.html');
   if (port.sender?.url !== trustedSidePanelUrl) {
-    try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required' }); } catch (_) {}
+    try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required', message: `Não foi possível validar a credencial (origem inesperada: ${port.sender?.url || 'desconhecida'}).` }); } catch (_) {}
     return;
   }
   const documentId = port.sender?.documentId;
+  const reject = (reason) => {
+    try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required', message: `Não foi possível validar a credencial (${reason}).` }); } catch (_) {}
+  };
   let portConnected = true;
   const credentialSessionIds = new Set();
   let credentialOperation = Promise.resolve();
@@ -112,8 +116,9 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((message) => {
     if (message?.type === 'credentialSessionStart') {
       enqueueCredentialOperation(async () => {
-        if (!portConnected || !await trustedCredentialStorageReady) {
-          try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required' }); } catch (_) {}
+        if (!portConnected) return;
+        if (!await trustedCredentialStorageReady) {
+          reject('storage.session.setAccessLevel falhou');
           return;
         }
         invalidateCredentialSessionsForPort(port);
@@ -121,14 +126,14 @@ chrome.runtime.onConnect.addListener((port) => {
         let apiKey = typeof message.apiKey === 'string' ? message.apiKey.trim() : '';
         const stored = apiKey ? await saveCredentialForBrowserSession(apiKey) : true;
         if (apiKey && !stored) {
-          try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required' }); } catch (_) {}
+          reject('não foi possível gravar a credencial');
           return;
         }
         if (!apiKey) apiKey = await loadCredentialForBrowserSession();
         if (!portConnected) return;
         const credentialSessionId = createCredentialSession(port, documentId, trustedSidePanelUrl, apiKey);
         if (!credentialSessionId) {
-          try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required' }); } catch (_) {}
+          reject(apiKey ? `documentId=${documentId === undefined ? 'undefined' : typeof documentId}` : 'sem credencial armazenada');
           return;
         }
         credentialSessionIds.add(credentialSessionId);
@@ -186,7 +191,7 @@ function startAgentRun(tab, settings, messages, meta, credentialSessionId) {
   chrome.storage.session.set({
     runState: { status: 'running', tabId: tab.id, prompt, startedAt, credentialSessionId, updatedAt: Date.now() },
   });
-  agentLoop({ tabId: tab.id, messages, apiKey: settings.apiKey, credentialSessionId, model: settings.model, gatewayUrl: settings.gatewayUrl || '', maxSteps: settings.maxSteps, features: settings.featureFlags || {}, lang: settings.language === 'en' ? 'en' : 'pt' })
+  agentLoop({ tabId: tab.id, messages, apiKey: settings.apiKey, credentialSessionId, model: settings.model, maxSteps: settings.maxSteps, features: settings.featureFlags || {}, lang: settings.language === 'en' ? 'en' : 'pt' })
     .then((result) => {
       if (result.guardRejected) return;
       if (result.error === 'credential_invalid') {
@@ -366,7 +371,6 @@ async function runTranslateTurn(tab, settings, text, credentialSessionId) {
       system: TRANSLATE_SYSTEM,
       apiKey: settings.apiKey,
       model: settings.chatModel || settings.model,
-      gatewayUrl: settings.gatewayUrl || '',
       maxTokens: 4096,
       signal: controller.signal,
       // Traduzir não exige raciocínio: com effort:high o Sonnet 5 passa de 120s na mesma
@@ -461,7 +465,6 @@ async function startChatRun(tab, settings, text, credentialSessionId, uiMode = '
       apiKey: settings.apiKey,
       credentialSessionId,
       model: settings.chatModel || settings.model,
-      gatewayUrl: settings.gatewayUrl || '',
       maxSteps: settings.maxSteps,
       features: { ...(settings.featureFlags || {}), videoRecording: false },
       mode: loopMode,
@@ -601,7 +604,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
         return;
       }
-      chrome.storage.local.get(['model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language'], (s) => {
+      chrome.storage.local.get(['model', 'maxSteps', 'featureFlags', 'language'], (s) => {
         if (anyLoopRunning() || isBatchRunning()) {
           sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
           return;
@@ -628,7 +631,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
         return;
       }
-      chrome.storage.local.get(['model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language'], (s) => {
+      chrome.storage.local.get(['model', 'maxSteps', 'featureFlags', 'language'], (s) => {
         if (anyLoopRunning() || isBatchRunning()) {
           sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
           return;
@@ -728,7 +731,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     withTargetTab(req.tabId, (tab) => {
       if (!tab || isRestrictedUrl(tab.url)) { sendResponse({ error: 'Nenhuma aba válida ativa — abra a página que quer analisar' }); return; }
       if (anyLoopRunning() || isBatchRunning()) { sendResponse({ error: 'Aguarde a execução em andamento terminar' }); return; }
-      chrome.storage.local.get(['model', 'gatewayUrl'], async (s) => {
+      chrome.storage.local.get(['model'], async (s) => {
         const controller = new AbortController();
         const unregisterCredentialTask = registerCredentialTask(credential.credentialSessionId, () => controller.abort());
         if (!unregisterCredentialTask) { sendResponse({ error: 'credential_required' }); return; }
@@ -744,7 +747,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
               content: `Página em teste:\nURL: ${page.url}\nTítulo: ${page.title}\n\nElementos interativos:\n${elements}\n\nTexto visível (parcial):\n${(page.visibleText || '').slice(0, 3000)}`,
             }],
             system: 'Você é um QA sênior fazendo teste exploratório. Analise a página e sugira de 3 a 5 test cases valiosos e EXECUTÁVEIS por um agente de browser (passos concretos, cada um terminando com uma verificação). Responda APENAS com um array JSON válido, sem markdown e sem texto fora do JSON: [{"name": "título curto do teste", "prompt": "1. passo...\\n2. passo...\\n3. Verifique que ..."}]',
-            apiKey: credential.apiKey, model: s.model, gatewayUrl: s.gatewayUrl || '', signal: controller.signal,
+            apiKey: credential.apiKey, model: s.model, signal: controller.signal,
           });
           const match = (turn.text || '').match(/\[[\s\S]*\]/);
           const suggestions = match
@@ -819,7 +822,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     // O Tradutor não toca na página: funciona em qualquer aba, inclusive chrome:// e sem aba nenhuma.
     if (mode === 'translate') {
       if (!text) { sendResponse({ error: 'Mensagem vazia' }); return true; }
-      chrome.storage.local.get(['model', 'chatModel', 'gatewayUrl'], (s) => {
+      chrome.storage.local.get(['model', 'chatModel'], (s) => {
         withTargetTab(req.tabId, (tab) => {
           runTranslateTurn(tab || null, { ...s, apiKey: credential.apiKey }, text, credential.credentialSessionId).catch(() => {});
           sendResponse({ started: true, tabId: tab?.id ?? null });
@@ -839,7 +842,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         return;
       }
       if (!text) { sendResponse({ error: 'Mensagem vazia' }); return; }
-      chrome.storage.local.get(['model', 'chatModel', 'gatewayUrl', 'maxSteps', 'featureFlags', 'accessibilityMode', 'language'], (s) => {
+      chrome.storage.local.get(['model', 'chatModel', 'maxSteps', 'featureFlags', 'accessibilityMode', 'language'], (s) => {
         if (anyLoopRunning() || isBatchRunning()) {
           sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de enviar outro comando.' });
           return;
@@ -854,12 +857,12 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   if (req.action === 'listModels') {
     const credential = requireCredentialSession(req, sender);
     if (credential.error) { sendResponse(credential); return true; }
-    chrome.storage.local.get(['gatewayUrl'], async (s) => {
+    (async () => {
       const controller = new AbortController();
       const unregisterCredentialTask = registerCredentialTask(credential.credentialSessionId, () => controller.abort());
       if (!unregisterCredentialTask) { sendResponse({ error: 'credential_required' }); return; }
       try {
-        const models = await listGatewayModels({ apiKey: credential.apiKey, gatewayUrl: s.gatewayUrl || '', signal: controller.signal });
+        const models = await listGatewayModels({ apiKey: credential.apiKey, signal: controller.signal });
         await chrome.storage.local.set({ chatModelsCache: { models, updatedAt: Date.now() } }).catch(() => {});
         sendResponse({ models });
       } catch (e) {
@@ -870,7 +873,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       } finally {
         unregisterCredentialTask();
       }
-    });
+    })();
     return true;
   }
 

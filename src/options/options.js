@@ -9,7 +9,6 @@ const $ = (id) => document.getElementById(id);
 // aba Executar usam DEFAULT_MODEL. Um valor antigo em storage.model continua sendo
 // respeitado (ver startAgentRun), para não mudar o comportamento de quem já configurou.
 const FIELDS = {
-  gatewayUrl: 'gatewayUrlInput',
   environmentsJson: 'environmentsInput',
   jiraUrl: 'jiraUrl',
   jiraEmail: 'jiraEmail',
@@ -885,15 +884,13 @@ function saveAll() {
   const envParsed = parseEnvironments($(FIELDS.environmentsJson).value);
   if (envParsed.error) { showStatus(`${tt('Ambientes', 'Environments')}: ${envParsed.error}`, 'error'); return; }
 
-  const gatewayUrl = $(FIELDS.gatewayUrl).value.trim().replace(/\/$/, '');
   const jiraUrl = $(FIELDS.jiraUrl).value.trim().replace(/\/$/, '');
   const zephyrBaseUrl = $(FIELDS.zephyrBaseUrl).value.trim().replace(/\/$/, '');
-  for (const [label, url] of [['Gateway URL', gatewayUrl], ['Jira URL', jiraUrl], ['Zephyr Base URL', zephyrBaseUrl]]) {
+  for (const [label, url] of [['Jira URL', jiraUrl], ['Zephyr Base URL', zephyrBaseUrl]]) {
     if (!looksLikeUrl(url)) { showStatus(tt(`${label} inválida — use uma URL completa (ex.: https://...)`, `Invalid ${label} — use a full URL (e.g. https://...)`), 'error'); return; }
   }
 
   chrome.storage.local.set({
-    gatewayUrl,
     maxSteps: clampMaxSteps($('maxStepsInput').value),
     environmentsJson: $(FIELDS.environmentsJson).value.trim(),
     jiraUrl,

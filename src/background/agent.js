@@ -1184,7 +1184,7 @@ function toolResultText(a, { staleExhausted = false } = {}) {
   return 'OK';
 }
 
-export async function agentLoop({ tabId: initialTabId, messages, apiKey, credentialSessionId, model: rawModel, gatewayUrl, maxSteps, features, mode = 'test', a11y = false, lang = 'pt' }) {
+export async function agentLoop({ tabId: initialTabId, messages, apiKey, credentialSessionId, model: rawModel, maxSteps, features, mode = 'test', a11y = false, lang = 'pt' }) {
   const model = rawModel || DEFAULT_MODEL;
   const askMode = mode === 'ask';
   const chatMode = mode === 'chat' || askMode;
@@ -1290,7 +1290,7 @@ export async function agentLoop({ tabId: initialTabId, messages, apiKey, credent
           messages: withEphemeralImage(agentMessages, screenshot),
           system,
           tools,
-          apiKey, model: turnModel, gatewayUrl,
+          apiKey, model: turnModel,
           // Só o Agente/teste paga o raciocínio alto: no modo Chat pergunta-resposta (ask)
           // ele multiplicaria o tempo de espera sem melhorar a resposta. Fora do ask, o
           // esforço é adaptativo: high no 1º turno (planejamento) ou após falha/stale no

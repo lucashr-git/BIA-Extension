@@ -1,8 +1,8 @@
 import { DEFAULT_MODEL, modelTransport } from '../shared/constants.js';
 
-// Gateway padrão quando o usuário não configura um: API direta da Anthropic.
-// Qualquer gateway compatível (ex.: LiteLLM) pode ser definido nas Configurações.
-const DEFAULT_GATEWAY_URL = 'https://api.anthropic.com';
+// Gateway único da Bia. Não é configurável: a credencial é um JWT do Flow, que
+// só vale aqui. Trocar isso exigiria trocar também o esquema de autenticação.
+export const GATEWAY_URL = 'https://flow.ciandt.com/flow-litellm';
 
 function combineSignals(external, timeoutMs) {
   if (typeof AbortSignal.any === 'function') {
@@ -23,10 +23,7 @@ function combineSignals(external, timeoutMs) {
   return { signal: controller.signal, dispose };
 }
 
-function buildAuthHeaders(gatewayUrl, apiKey) {
-  if (gatewayUrl && gatewayUrl.includes('api.anthropic.com')) {
-    return { 'x-api-key': apiKey };
-  }
+function buildAuthHeaders(apiKey) {
   return { 'Authorization': `Bearer ${apiKey}` };
 }
 
@@ -40,12 +37,6 @@ function credentialInvalidError() {
   return error;
 }
 
-function resolveModelName(gatewayUrl, model) {
-  const name = model || DEFAULT_MODEL;
-  if (!gatewayUrl.includes('api.anthropic.com')) return name;
-  const m = name.match(/^anthropic\.claude-(\d+)-(\d+)-([a-z]+)$/i);
-  return m ? `claude-${m[3]}-${m[1]}-${m[2]}` : name;
-}
 
 export const EFFORT_HIGH = 'high';
 export const EFFORT_MEDIUM = 'medium';
@@ -251,7 +242,8 @@ function markLastMessageCacheable(messages) {
   return cleaned;
 }
 
-function buildRequest({ transport, baseUrl, messages, system, tools, toolChoice, model, maxTokens, apiKey, effort, dropTemperature = false, enableCache = false, enableStream = false }) {
+function buildRequest({ transport, messages, system, tools, toolChoice, model, maxTokens, apiKey, effort, dropTemperature = false, enableCache = false, enableStream = false }) {
+  const baseUrl = GATEWAY_URL;
   if (transport === 'openai') {
     const payload = {
       model,
@@ -265,7 +257,7 @@ function buildRequest({ transport, baseUrl, messages, system, tools, toolChoice,
     };
     return {
       url: `${baseUrl}/v1/chat/completions`,
-      headers: { 'Content-Type': 'application/json', ...buildAuthHeaders(baseUrl, apiKey) },
+      headers: { 'Content-Type': 'application/json', ...buildAuthHeaders(apiKey) },
       body: JSON.stringify(payload),
       parse: parseOpenAIResponse,
     };
@@ -277,10 +269,10 @@ function buildRequest({ transport, baseUrl, messages, system, tools, toolChoice,
     headers: {
       'Content-Type': 'application/json',
       'anthropic-version': '2023-06-01',
-      ...buildAuthHeaders(baseUrl, apiKey),
+      ...buildAuthHeaders(apiKey),
     },
     body: JSON.stringify({
-      model: resolveModelName(baseUrl, model),
+      model,
       max_tokens: maxTokens,
       ...samplingParams(model, effort),
       system: anthropicSystem,
@@ -414,13 +406,12 @@ async function streamAnthropicResponse(res, onDelta) {
 /* Lista os modelos que o token realmente libera no proxy Flow.
    Evita depender de IDs adivinhados: o nome comercial ("GPT 5.5") quase nunca é igual ao
    ID técnico, e um ID errado só aparece na cara do usuário como erro no meio da conversa. */
-export async function listGatewayModels({ apiKey, gatewayUrl, signal, timeoutMs = 15000 }) {
-  const baseUrl = (gatewayUrl || DEFAULT_GATEWAY_URL).replace(/\/$/, '');
+export async function listGatewayModels({ apiKey, signal, timeoutMs = 15000 }) {
   const combined = combineSignals(signal, timeoutMs);
   try {
-    const res = await fetch(`${baseUrl}/v1/models`, {
+    const res = await fetch(`${GATEWAY_URL}/v1/models`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json', ...buildAuthHeaders(baseUrl, apiKey) },
+      headers: { 'Content-Type': 'application/json', ...buildAuthHeaders(apiKey) },
       signal: combined.signal,
       credentials: 'omit',
     });
@@ -454,15 +445,14 @@ let cacheControlUnsupported = false;
 // cacheControlUnsupported acima.
 let streamingUnsupported = false;
 
-export async function callClaude({ messages, system, tools, toolChoice, apiKey, model, signal, timeoutMs = 120000, gatewayUrl, onRetry, maxTokens = 8192, effort = EFFORT_HIGH, onDelta }) {
-  const baseUrl = (gatewayUrl || DEFAULT_GATEWAY_URL).replace(/\/$/, '');
+export async function callClaude({ messages, system, tools, toolChoice, apiKey, model, signal, timeoutMs = 120000, onRetry, maxTokens = 8192, effort = EFFORT_HIGH, onDelta }) {
   const modelName = model || DEFAULT_MODEL;
   const transport = modelTransport(modelName);
   let dropTemperature = false;
   let enableCache = transport === 'anthropic' && !cacheControlUnsupported;
   let enableStream = transport === 'anthropic' && !streamingUnsupported && typeof onDelta === 'function';
   let request = buildRequest({
-    transport, baseUrl, messages, system, tools, toolChoice, model: modelName, maxTokens, apiKey, effort, enableCache, enableStream,
+    transport, messages, system, tools, toolChoice, model: modelName, maxTokens, apiKey, effort, enableCache, enableStream,
   });
   const maxAttempts = RETRY_DELAYS_MS.length + 1;
 
@@ -508,7 +498,7 @@ export async function callClaude({ messages, system, tools, toolChoice, apiKey, 
       if (res.status === 400 && transport === 'openai' && !dropTemperature && /temperature/i.test(message)) {
         dropTemperature = true;
         request = buildRequest({
-          transport, baseUrl, messages, system, tools, toolChoice,
+          transport, messages, system, tools, toolChoice,
           model: modelName, maxTokens, apiKey, effort, dropTemperature: true, enableCache,
         });
         continue;
@@ -520,7 +510,7 @@ export async function callClaude({ messages, system, tools, toolChoice, apiKey, 
         cacheControlUnsupported = true;
         enableCache = false;
         request = buildRequest({
-          transport, baseUrl, messages, system, tools, toolChoice,
+          transport, messages, system, tools, toolChoice,
           model: modelName, maxTokens, apiKey, effort, dropTemperature, enableCache, enableStream,
         });
         continue;
@@ -533,7 +523,7 @@ export async function callClaude({ messages, system, tools, toolChoice, apiKey, 
         streamingUnsupported = true;
         enableStream = false;
         request = buildRequest({
-          transport, baseUrl, messages, system, tools, toolChoice,
+          transport, messages, system, tools, toolChoice,
           model: modelName, maxTokens, apiKey, effort, dropTemperature, enableCache, enableStream,
         });
         continue;
@@ -562,7 +552,7 @@ export async function callClaude({ messages, system, tools, toolChoice, apiKey, 
         streamingUnsupported = true;
         enableStream = false;
         request = buildRequest({
-          transport, baseUrl, messages, system, tools, toolChoice,
+          transport, messages, system, tools, toolChoice,
           model: modelName, maxTokens, apiKey, effort, dropTemperature, enableCache, enableStream,
         });
         if (await retry(`falha ao interpretar streaming (${e.message})`)) continue;

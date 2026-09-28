@@ -35,7 +35,6 @@ async function runItem(tabId, item, settings, credentialSessionId) {
       apiKey: settings.apiKey,
       credentialSessionId,
       model: settings.model,
-      gatewayUrl: settings.gatewayUrl || '',
       maxSteps: settings.maxSteps,
       features: { ...(settings.featureFlags || {}), videoRecording: false },
       lang: settings.language === 'en' ? 'en' : 'pt',
