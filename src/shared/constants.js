@@ -5,6 +5,7 @@ export const DEFAULT_MODEL = 'claude-sonnet-5';
 // Modelo rápido para micro-ações no modo Auto (roteamento adaptativo Sonnet planeja / Haiku executa).
 export const HAIKU_MODEL = 'claude-haiku-4-5';
 export const DEFAULT_MAX_STEPS = 25;
+export const SESSION_ONLY_CONFIG_KEYS = ['apiKey', 'jiraToken', 'zephyrToken'];
 
 // Modos do chat. O rótulo é o que o usuário vê; `loopMode` é o que agentLoop entende.
 // Atenção: no agentLoop, 'chat' sempre significou "conversa com todas as ferramentas" —
