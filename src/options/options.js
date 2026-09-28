@@ -2,6 +2,7 @@ import { DEFAULT_MAX_STEPS, clampMaxSteps, sanitizePathSegment, looksLikeUrl } f
 import { parseEnvironments } from '../shared/vars.js';
 import { computeFlakyMap, summarizeMetrics, buildDailyTrend, buildPrioritySuggestions, aggregateBy } from '../shared/insights.js';
 import { TEMPLATE_PACKS } from '../shared/templates.js';
+import { getStoredConfig, setStoredConfig, removeSessionOnlyConfigFromLocal } from '../shared/storage.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -730,7 +731,7 @@ const MANUAL_EN = `
 <section>
   <h2>🛡️ Security and privacy</h2>
   <ul>
-    <li>API keys and tokens live only in <code>chrome.storage.local</code> — never synced.</li>
+    <li>API keys and tokens live only in <code>chrome.storage.session</code> and are cleared when the browser session ends.</li>
     <li>Sensitive data (valid cards, CPF/CNPJ, JWT, emails) is masked before reaching the model.</li>
     <li>Destructive actions are blocked without explicit instruction; sensitive actions require confirmation.</li>
     <li>Page content is treated as data, never as instruction (anti prompt-injection).</li>
@@ -840,7 +841,7 @@ function renderManual() {
 <section>
   <h2>🛡️ Segurança e privacidade</h2>
   <ul>
-    <li>API keys e tokens ficam só no <code>chrome.storage.local</code> — nunca são sincronizados.</li>
+    <li>API keys e tokens ficam só no <code>chrome.storage.session</code> e são apagados quando a sessão do navegador termina.</li>
     <li>Dados sensíveis (cartões válidos, CPF/CNPJ, JWT, e-mails) são mascarados antes de ir ao modelo.</li>
     <li>Ações destrutivas são bloqueadas sem instrução explícita; ações sensíveis pedem confirmação.</li>
     <li>Conteúdo da página é tratado como dado, nunca como instrução (anti prompt-injection).</li>
@@ -869,7 +870,7 @@ function showStatus(msg, type) {
 }
 
 function loadAll() {
-  chrome.storage.local.get([...Object.keys(FIELDS), 'maxSteps', 'videoAutoSave', 'featureFlags', 'downloadFolder', 'downloadAskWhere'], (r) => {
+  getStoredConfig([...Object.keys(FIELDS), 'maxSteps', 'videoAutoSave', 'featureFlags', 'downloadFolder', 'downloadAskWhere']).then((r) => {
     $('videoAutoSave').checked = r.videoAutoSave === true;
     $('downloadFolder').value = r.downloadFolder || '';
     $('downloadAskWhere').checked = r.downloadAskWhere === true;
@@ -895,7 +896,7 @@ function saveAll() {
     if (!looksLikeUrl(url)) { showStatus(tt(`${label} inválida — use uma URL completa (ex.: https://...)`, `Invalid ${label} — use a full URL (e.g. https://...)`), 'error'); return; }
   }
 
-  chrome.storage.local.set({
+  setStoredConfig({
     apiKey,
     gatewayUrl,
     maxSteps: clampMaxSteps($('maxStepsInput').value),
@@ -907,11 +908,12 @@ function saveAll() {
     zephyrBaseUrl,
     zephyrToken: $(FIELDS.zephyrToken).value.trim(),
     zephyrProjectKey: $(FIELDS.zephyrProjectKey).value.trim().toUpperCase(),
-  }, () => {
-    if (chrome.runtime.lastError) { showStatus(tt(`Erro ao salvar: ${chrome.runtime.lastError.message}`, `Error saving: ${chrome.runtime.lastError.message}`), 'error'); return; }
+  }).then(() => removeSessionOnlyConfigFromLocal()).then(() => {
     showStatus(apiKey
       ? tt('✓ Configurações salvas', '✓ Settings saved')
       : tt('✓ Salvo — insira a API Key para poder executar testes', '✓ Saved — enter the API Key to run tests'), 'success');
+  }).catch((e) => {
+    showStatus(tt(`Erro ao salvar: ${e.message}`, `Error saving: ${e.message}`), 'error');
   });
 }
 
@@ -962,7 +964,8 @@ async function exportToZephyr() {
     status.textContent = tt('⚠️ Preencha o API Token e a Project Key do Zephyr primeiro.', '⚠️ Fill in the Zephyr API Token and Project Key first.');
     return;
   }
-  await new Promise((r) => chrome.storage.local.set(cfg, r));
+  await setStoredConfig(cfg);
+  await removeSessionOnlyConfigFromLocal();
   status.textContent = tt('Exportando...', 'Exporting...');
   const res = await sendMsg('zephyrExport', { testId });
   if (res.error) { status.textContent = `⚠️ ${res.error}`; return; }
@@ -978,7 +981,8 @@ async function importFromZephyr() {
 
   const cfg = currentZephyrConfig();
   if (!cfg.zephyrToken || !cfg.zephyrProjectKey) { status.textContent = tt('⚠️ Preencha o API Token e a Project Key do Zephyr primeiro.', '⚠️ Fill in the Zephyr API Token and Project Key first.'); return; }
-  await new Promise((r) => chrome.storage.local.set(cfg, r));
+  await setStoredConfig(cfg);
+  await removeSessionOnlyConfigFromLocal();
 
   status.textContent = tt('Importando...', 'Importing...');
   const res = await sendMsg('zephyrImport', { key });

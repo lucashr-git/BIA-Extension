@@ -6,6 +6,7 @@ import {
 import { doneLabel } from '../shared/actionLabels.js';
 import { substituteVars, parseDataset, expandBatchItems, parseEnvironments } from '../shared/vars.js';
 import { computeFlakyMap } from '../shared/insights.js';
+import { getStoredConfig } from '../shared/storage.js';
 
 let isDarkMode    = false;
 let agentRunning  = false;
@@ -960,7 +961,7 @@ async function fetchJiraContext(text) {
   if (!featEnabled('jira')) return '';
   const keys = extractJiraKeys(text);
   if (!keys.length) return '';
-  const cfg = await new Promise((r) => chrome.storage.local.get(['jiraUrl', 'jiraToken'], r));
+  const cfg = await getStoredConfig(['jiraUrl', 'jiraToken']);
   if (!cfg.jiraUrl || !cfg.jiraToken) return '';
   const parts = [];
   for (const key of keys) {
@@ -1440,13 +1441,19 @@ function renderResultSteps(actions) {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local') return;
-  if (changes.language) { location.reload(); return; }
-  if (changes.environmentsJson || changes.activeEnvironment) loadEnvironments();
-  if (changes.jiraUrl || changes.jiraToken || changes.jiraProjectKey) checkJiraConfig();
-  if (changes.savedTests) renderLibrary(librarySearch.value);
-  if (changes.featureFlags) applyFeatureFlags();
-  if (changes.themeMode) loadTheme();
+  if (area === 'local') {
+    if (changes.language) { location.reload(); return; }
+    if (changes.environmentsJson || changes.activeEnvironment) loadEnvironments();
+    if (changes.jiraUrl || changes.jiraProjectKey) checkJiraConfig();
+    if (changes.savedTests) renderLibrary(librarySearch.value);
+    if (changes.featureFlags) applyFeatureFlags();
+    if (changes.themeMode) loadTheme();
+  }
+  if (area === 'session' && (changes.jiraToken || changes.zephyrToken)) {
+    checkJiraConfig();
+    renderLibrary(librarySearch.value);
+    updateZephyrPushArea().catch(() => {});
+  }
 });
 
 function applyFeatureFlags() {
@@ -1822,7 +1829,7 @@ function exportBatchPdf() {
 }
 
 function renderLibrary(filter = '') {
-  chrome.storage.local.get(['savedTests', 'runHistory', 'zephyrToken', 'zephyrProjectKey'], (r) => {
+  getStoredConfig(['savedTests', 'runHistory', 'zephyrToken', 'zephyrProjectKey']).then((r) => {
     const zephyrReady = featEnabled('zephyr') && !!(r.zephyrToken && r.zephyrProjectKey);
     const flakyMap = computeFlakyMap(r.runHistory || []);
     const all = r.savedTests || [];
@@ -1986,7 +1993,7 @@ function saveCurrentTest() {
   const resultRow = document.querySelector('#runResult .result-row');
   resultRow.parentElement.insertBefore(form, resultRow);
 
-  chrome.storage.local.get(['zephyrToken', 'zephyrProjectKey', 'zephyrAutoExport'], (cfg) => {
+  getStoredConfig(['zephyrToken', 'zephyrProjectKey', 'zephyrAutoExport']).then((cfg) => {
     if (featEnabled('zephyr') && cfg.zephyrToken && cfg.zephyrProjectKey) {
       form.querySelector('#saveZephyrRow').classList.remove('hidden');
       form.querySelector('#saveZephyrCheck').checked = !!cfg.zephyrAutoExport;
@@ -2526,7 +2533,7 @@ async function updateZephyrPushArea() {
   // Com zephyrKey envia direto; sem chave mas vindo da biblioteca (loadedTestId),
   // o push cria o test case no Zephyr primeiro e depois envia o resultado.
   if ((!loadedZephyrKey && !loadedTestId) || !featEnabled('zephyr')) { zephyrPushArea.classList.add('hidden'); return false; }
-  const cfg = await new Promise((r) => chrome.storage.local.get(['zephyrToken', 'zephyrProjectKey', 'zephyrAutoPush'], r));
+  const cfg = await getStoredConfig(['zephyrToken', 'zephyrProjectKey', 'zephyrAutoPush']);
   if (!cfg.zephyrToken || !cfg.zephyrProjectKey) { zephyrPushArea.classList.add('hidden'); return false; }
   zephyrPushKey.textContent = loadedZephyrKey || 'novo test case';
   const autoCheck = $('zephyrAutoPushCheck');
@@ -2579,7 +2586,7 @@ async function pushResultToZephyr() {
 }
 
 function checkJiraConfig() {
-  chrome.storage.local.get(['jiraUrl', 'jiraEmail', 'jiraToken', 'jiraProjectKey'], (r) => {
+  getStoredConfig(['jiraUrl', 'jiraEmail', 'jiraToken', 'jiraProjectKey']).then((r) => {
     const ok = featEnabled('jira') && !!(r.jiraUrl && r.jiraToken && r.jiraProjectKey);
     resultJiraBtn.classList.toggle('hidden', !ok);
     const bugJiraBtn = $('bugJiraBtn');
