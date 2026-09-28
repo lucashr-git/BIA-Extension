@@ -30,6 +30,16 @@ function buildAuthHeaders(gatewayUrl, apiKey) {
   return { 'Authorization': `Bearer ${apiKey}` };
 }
 
+function redactCredential(message, apiKey) {
+  return apiKey ? String(message).split(apiKey).join('[redacted]') : String(message);
+}
+
+function credentialInvalidError() {
+  const error = new Error('credential_invalid');
+  error.code = 'credential_invalid';
+  return error;
+}
+
 function resolveModelName(gatewayUrl, model) {
   const name = model || DEFAULT_MODEL;
   if (!gatewayUrl.includes('api.anthropic.com')) return name;
@@ -404,9 +414,9 @@ async function streamAnthropicResponse(res, onDelta) {
 /* Lista os modelos que o token realmente libera no proxy Flow.
    Evita depender de IDs adivinhados: o nome comercial ("GPT 5.5") quase nunca é igual ao
    ID técnico, e um ID errado só aparece na cara do usuário como erro no meio da conversa. */
-export async function listGatewayModels({ apiKey, gatewayUrl, timeoutMs = 15000 }) {
+export async function listGatewayModels({ apiKey, gatewayUrl, signal, timeoutMs = 15000 }) {
   const baseUrl = (gatewayUrl || DEFAULT_GATEWAY_URL).replace(/\/$/, '');
-  const combined = combineSignals(null, timeoutMs);
+  const combined = combineSignals(signal, timeoutMs);
   try {
     const res = await fetch(`${baseUrl}/v1/models`, {
       method: 'GET',
@@ -415,8 +425,9 @@ export async function listGatewayModels({ apiKey, gatewayUrl, timeoutMs = 15000 
       credentials: 'omit',
     });
     if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw credentialInvalidError();
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `O gateway respondeu ${res.status} ao listar modelos.`);
+      throw new Error(redactCredential(err.error?.message || `O gateway respondeu ${res.status} ao listar modelos.`, apiKey));
     }
     const data = await res.json();
     const ids = (Array.isArray(data?.data) ? data.data : [])
@@ -489,8 +500,9 @@ export async function callClaude({ messages, system, tools, toolChoice, apiKey, 
 
     if (!res.ok) {
       if (RETRYABLE_STATUS.has(res.status) && await retry(`erro ${res.status} do gateway`)) continue;
+      if (res.status === 401 || res.status === 403) throw credentialInvalidError();
       const err = await res.json().catch(() => ({}));
-      const message = err.error?.message || err.message || `Erro ${res.status} do gateway`;
+      const message = redactCredential(err.error?.message || err.message || `Erro ${res.status} do gateway`, apiKey);
 
       // Modelo que recusa `temperature`: refaz a chamada sem ele, uma única vez.
       if (res.status === 400 && transport === 'openai' && !dropTemperature && /temperature/i.test(message)) {
@@ -529,7 +541,7 @@ export async function callClaude({ messages, system, tools, toolChoice, apiKey, 
 
       let hint = '';
       if ([502, 503, 504].includes(res.status)) hint = ' — o gateway está indisponível no momento. Verifique a VPN/conexão e tente novamente em instantes, ou troque o Gateway URL em ⚙️ Configurações.';
-      else if ([401, 403].includes(res.status)) hint = ' — verifique a API Key em ⚙️ Configurações.';
+      else if ([401, 403].includes(res.status)) hint = ' — reconecte a API Key no painel.';
       else if (res.status === 429) hint = ' — limite de requisições atingido; aguarde um pouco e tente novamente.';
       // O proxy Flow devolve exatamente isto quando a rota OpenAI não está liberada para
       // o token — o modelo existe em /v1/models, mas é inalcançável por ela.

@@ -55,6 +55,7 @@
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
       </button>
+      <button id="credentialSwitchBtn" class="credential-switch hidden" type="button">Trocar API Key</button>
     </div>
   </nav>
 
@@ -495,6 +496,20 @@
         Copiar
       </button>
     </div>
+  </div>
+</div>
+
+<div id="credentialGate" class="credential-gate" role="dialog" aria-labelledby="credentialGateTitle">
+  <div class="credential-gate-box">
+    <div class="credential-gate-mark" aria-hidden="true">✳</div>
+    <h1 id="credentialGateTitle" class="credential-gate-title">Conectar ao gateway</h1>
+    <p class="credential-gate-text">Digite sua API key ou JWT para usar a Bia. Ela fica disponível enquanto o Chrome estiver aberto; você não precisará digitá-la ao abrir o painel novamente. Será solicitada após reiniciar, recarregar ou atualizar o Chrome.</p>
+    <form id="credentialForm" class="credential-form">
+      <label class="sr-only" for="credentialInput">API key ou JWT</label>
+      <input id="credentialInput" type="password" autocomplete="off" placeholder="API key ou JWT" required>
+      <button id="credentialSubmit" class="credential-submit" type="submit">Conectar</button>
+    </form>
+    <p id="credentialError" class="credential-error hidden" role="alert"></p>
   </div>
 </div>
 

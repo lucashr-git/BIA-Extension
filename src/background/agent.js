@@ -3,8 +3,9 @@ import { captureScreen, getPageText, waitForLoad } from './page.js';
 import { notifyStatus } from './status.js';
 import {
   addToSessionLog, getSessionLog, isAgentCancelled, clearCancelFlag,
-  createConfirmation, registerAbort, clearAbort,
+  createConfirmation, registerAbort, clearAbort, cancelAgentLoop,
   isLoopRunning, markLoopRunning, markLoopStopped, clearSession, setLoopCurrentTab,
+  registerCredentialTask,
 } from './state.js';
 import { runActionsWithStatus } from './actions.js';
 import { cdpDetach, cdpStartScreencast, cdpStopScreencast } from './cdp.js';
@@ -693,13 +694,15 @@ async function observePage(tabId, { mutated = true } = {}) {
   return capturePageState(tabId);
 }
 
-async function requestUserConfirmation(description, tabId) {
+async function requestUserConfirmation(description, tabId, credentialSessionId) {
   const id = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  chrome.storage.session.set({ pendingConfirm: { id, description, createdAt: Date.now() } }).catch(() => {});
+  chrome.storage.session.set({ pendingConfirm: { id, description, createdAt: Date.now(), credentialSessionId } }).catch(() => {});
   chrome.runtime.sendMessage({ action: 'agentConfirmRequest', id, description }).catch(() => {});
   notifyStatus('⏸️ Aguardando sua confirmação no painel...');
-  const result = await createConfirmation(id, tabId);
-  chrome.storage.session.remove('pendingConfirm').catch(() => {});
+  const result = await createConfirmation(id, tabId, credentialSessionId);
+  chrome.storage.session.get(['pendingConfirm']).then(({ pendingConfirm }) => {
+    if (pendingConfirm?.id === id) chrome.storage.session.remove('pendingConfirm').catch(() => {});
+  }).catch(() => {});
   chrome.runtime.sendMessage({ action: 'agentConfirmClosed', id }).catch(() => {});
   return result;
 }
@@ -915,7 +918,7 @@ function isAskModeAllowed(type) {
   return READ_ONLY_ACTIONS.has(type) || ASK_MODE_EXTRA_TOOLS.has(type);
 }
 
-async function screenActions(acts, page, userPrompt, tabId, { askMode = false, inspect = true } = {}) {
+async function screenActions(acts, page, userPrompt, tabId, { askMode = false, inspect = true, credentialSessionId } = {}) {
   const decisions = [];
   let cancelRest = false;
   for (let i = 0; i < acts.length; i++) {
@@ -939,7 +942,7 @@ async function screenActions(acts, page, userPrompt, tabId, { askMode = false, i
       continue;
     }
     if (act.type === 'ask_user_confirmation') {
-      const { approved, timedOut } = await requestUserConfirmation(act.message || 'A IA pediu sua confirmação para continuar.', tabId);
+      const { approved, timedOut } = await requestUserConfirmation(act.message || 'A IA pediu sua confirmação para continuar.', tabId, credentialSessionId);
       if (approved) {
         decisions.push({ act, info: `✅ O usuário APROVOU: "${act.message}". Prossiga com a ação planejada.` });
       } else {
@@ -989,7 +992,7 @@ async function screenActions(acts, page, userPrompt, tabId, { askMode = false, i
         continue;
       }
       const desc = `A IA quer executar: ${JSON.stringify({ type: act.type, target: act.target, selector: act.selector, text: act.text, url: act.url }).slice(0, 300)}\n${verdict.reason}`;
-      const { approved, timedOut } = await requestUserConfirmation(desc, tabId);
+      const { approved, timedOut } = await requestUserConfirmation(desc, tabId, credentialSessionId);
       if (!approved) {
         decisions.push({ act, error: `Negada pelo usuário (ação sensível${timedOut ? ' — sem resposta a tempo' : ''}): ${verdict.reason}. NÃO tente essa ação novamente; adapte o plano ou finalize.` });
         cancelRest = true;
@@ -1090,6 +1093,10 @@ export async function runActionChain(initialTabId, toRun, notifyStatus) {
   let signatureBefore = await getPageSignature(tabId).catch(() => null);
 
   for (let i = 0; i < toRun.length; i++) {
+    if (isAgentCancelled(initialTabId)) {
+      abortReason = 'a execução foi cancelada antes da ação';
+      break;
+    }
     const act = toRun[i];
     const single = await runActionsWithStatus(tabId, [act], notifyStatus);
     const result = single.executed[0];
@@ -1177,7 +1184,7 @@ function toolResultText(a, { staleExhausted = false } = {}) {
   return 'OK';
 }
 
-export async function agentLoop({ tabId: initialTabId, messages, apiKey, model: rawModel, gatewayUrl, maxSteps, features, mode = 'test', a11y = false, lang = 'pt' }) {
+export async function agentLoop({ tabId: initialTabId, messages, apiKey, credentialSessionId, model: rawModel, gatewayUrl, maxSteps, features, mode = 'test', a11y = false, lang = 'pt' }) {
   const model = rawModel || DEFAULT_MODEL;
   const askMode = mode === 'ask';
   const chatMode = mode === 'chat' || askMode;
@@ -1193,6 +1200,12 @@ export async function agentLoop({ tabId: initialTabId, messages, apiKey, model: 
   if (askMode) tools = tools.filter((t) => isAskModeAllowed(t.name));
   if (isLoopRunning(initialTabId)) {
     return { reply: '⚠️ Já existe uma execução em andamento nesta aba. Pare-a antes de iniciar outra.', actionsExecuted: [], guardRejected: true };
+  }
+  const unregisterCredentialTask = credentialSessionId
+    ? registerCredentialTask(credentialSessionId, () => cancelAgentLoop(initialTabId))
+    : null;
+  if (credentialSessionId && !unregisterCredentialTask) {
+    return { reply: '', actionsExecuted: [], error: 'credential_required' };
   }
   markLoopRunning(initialTabId);
   let tabId = initialTabId;
@@ -1293,6 +1306,9 @@ export async function agentLoop({ tabId: initialTabId, messages, apiKey, model: 
           finalReply = finalReply || 'Execução interrompida pelo usuário.';
           break;
         }
+        if (e.code === 'credential_invalid' || e.message === 'credential_invalid') {
+          return { reply: '', actionsExecuted: [], tabId, error: 'credential_invalid' };
+        }
         if (allExecuted.length === 0 && !finalReply) {
           return { reply: '', actionsExecuted: [], tabId, error: e.message };
         }
@@ -1343,7 +1359,7 @@ export async function agentLoop({ tabId: initialTabId, messages, apiKey, model: 
         continue;
       }
       const acts = turn.toolUses.map(toolUseToAction);
-      const decisions = await screenActions(acts, page, userPrompt, tabId, { askMode, inspect });
+      const decisions = await screenActions(acts, page, userPrompt, tabId, { askMode, inspect, credentialSessionId });
       if (isAgentCancelled(initialTabId)) {
         finalReply = finalReply || 'Execução interrompida pelo usuário.';
         break;
@@ -1562,6 +1578,7 @@ export async function agentLoop({ tabId: initialTabId, messages, apiKey, model: 
       finishStatus: finalStatus,
     };
   } finally {
+    unregisterCredentialTask?.();
     clearInterval(keepAlive);
     markLoopStopped(initialTabId);
     await cdpStopScreencast(tabId).catch(() => {});

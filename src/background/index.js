@@ -1,5 +1,5 @@
 import { agentLoop } from './agent.js';
-import { clearTabState, cancelAgentLoop, cancelAllAgentLoops, isLoopRunning, anyLoopRunning, findLoopByCurrentTab, resolveConfirmation, cancelAllConfirmations, cancelConfirmationsForTab, clearSession } from './state.js';
+import { clearTabState, cancelAgentLoop, cancelAllAgentLoops, isLoopRunning, anyLoopRunning, findLoopByCurrentTab, resolveConfirmation, cancelAllConfirmations, cancelConfirmationsForTab, clearSession, createCredentialSession, invalidateCredentialSession, invalidateCredentialSessionsForPort, requireCredentialSession, registerCredentialTask, configureTrustedCredentialStorage } from './state.js';
 import { doneLabel } from '../shared/actionLabels.js';
 import { createJiraIssue, attachScreenshotToJira, getJiraIssue } from './jira.js';
 import { startInspect, stopInspect, getPageContext, sendToContent } from './contentBridge.js';
@@ -13,7 +13,6 @@ import { scanPage } from './contentBridge.js';
 import { callClaude, listGatewayModels, EFFORT_LOW } from './gateway.js';
 
 const CONFIG_FIELDS = {
-  apiKey:           'DEFAULT_API_KEY',
   model:            'DEFAULT_MODEL',
   gatewayUrl:       'GATEWAY_URL',
   jiraUrl:          'JIRA_URL',
@@ -24,6 +23,47 @@ const CONFIG_FIELDS = {
   zephyrToken:      'ZEPHYR_TOKEN',
   zephyrProjectKey: 'ZEPHYR_PROJECT_KEY',
 };
+
+async function removeLegacyCredentialStorage() {
+  await Promise.all([
+    chrome.storage.local.remove(['apiKey', 'authSession']).catch(() => {}),
+    chrome.storage.session.remove(['apiKey', 'authSession']).catch(() => {}),
+  ]);
+}
+
+async function saveCredentialForBrowserSession(apiKey) {
+  if (!await trustedCredentialStorageReady) return false;
+  try { await chrome.storage.session.set({ credentialApiKey: apiKey }); return true; } catch (_) { return false; }
+}
+
+async function loadCredentialForBrowserSession() {
+  if (!await trustedCredentialStorageReady) return '';
+  try {
+    const stored = await chrome.storage.session.get(['credentialApiKey']);
+    return typeof stored.credentialApiKey === 'string' ? stored.credentialApiKey : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+async function clearCredentialForBrowserSession() {
+  if (!await trustedCredentialStorageReady) return false;
+  try { await chrome.storage.session.remove(['credentialApiKey']); return true; } catch (_) { return false; }
+}
+
+function isCredentialInvalid(error) {
+  return error?.code === 'credential_invalid' || error?.message === 'credential_invalid' || error === 'credential_invalid';
+}
+
+async function handleCredentialInvalid(credentialSessionId) {
+  invalidateCredentialSession(credentialSessionId);
+  await clearCredentialForBrowserSession();
+  chrome.runtime.sendMessage({ error: 'credential_invalid', code: 'credential_required' }).catch(() => {});
+}
+
+const trustedCredentialStorageReady = configureTrustedCredentialStorage(
+  (options) => chrome.storage.session.setAccessLevel(options)
+);
 
 async function loadLocalConfig() {
   let text;
@@ -53,6 +93,70 @@ async function loadLocalConfig() {
   });
 }
 
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'bia-credential-session') return;
+  const trustedSidePanelUrl = chrome.runtime.getURL('src/sidepanel/sidepanel.html');
+  if (port.sender?.url !== trustedSidePanelUrl) {
+    try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required' }); } catch (_) {}
+    return;
+  }
+  const documentId = port.sender?.documentId;
+  let portConnected = true;
+  const credentialSessionIds = new Set();
+  let credentialOperation = Promise.resolve();
+  const enqueueCredentialOperation = (operation) => {
+    credentialOperation = credentialOperation.then(operation, operation);
+    return credentialOperation;
+  };
+
+  port.onMessage.addListener((message) => {
+    if (message?.type === 'credentialSessionStart') {
+      enqueueCredentialOperation(async () => {
+        if (!portConnected || !await trustedCredentialStorageReady) {
+          try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required' }); } catch (_) {}
+          return;
+        }
+        invalidateCredentialSessionsForPort(port);
+        credentialSessionIds.clear();
+        let apiKey = typeof message.apiKey === 'string' ? message.apiKey.trim() : '';
+        const stored = apiKey ? await saveCredentialForBrowserSession(apiKey) : true;
+        if (apiKey && !stored) {
+          try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required' }); } catch (_) {}
+          return;
+        }
+        if (!apiKey) apiKey = await loadCredentialForBrowserSession();
+        if (!portConnected) return;
+        const credentialSessionId = createCredentialSession(port, documentId, trustedSidePanelUrl, apiKey);
+        if (!credentialSessionId) {
+          try { port.postMessage({ type: 'credentialSessionRejected', error: 'credential_required' }); } catch (_) {}
+          return;
+        }
+        credentialSessionIds.add(credentialSessionId);
+        try { port.postMessage({ type: 'credentialSessionReady', credentialSessionId }); } catch (_) {
+          invalidateCredentialSession(credentialSessionId);
+          credentialSessionIds.delete(credentialSessionId);
+        }
+      });
+      return;
+    }
+    if (message?.type === 'credentialSessionEnd') {
+      enqueueCredentialOperation(async () => {
+        invalidateCredentialSessionsForPort(port);
+        credentialSessionIds.clear();
+        await clearCredentialForBrowserSession();
+      });
+    }
+  });
+
+  port.onDisconnect.addListener(() => {
+    portConnected = false;
+    enqueueCredentialOperation(async () => {
+      invalidateCredentialSessionsForPort(port);
+      credentialSessionIds.clear();
+    });
+  });
+});
+
 function withTargetTab(reqTabId, cb) {
   if (reqTabId) {
     chrome.tabs.get(reqTabId, (t) => cb(chrome.runtime.lastError ? null : t));
@@ -76,18 +180,24 @@ async function addTabToFlowQAGroup(tab) {
   } catch (e) { console.warn('[FlowQA] Grupo:', e.message); }
 }
 
-function startAgentRun(tab, settings, messages, meta) {
+function startAgentRun(tab, settings, messages, meta, credentialSessionId) {
   const prompt = messages.map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n');
   const startedAt = Date.now();
   chrome.storage.session.set({
-    runState: { status: 'running', tabId: tab.id, prompt, startedAt, updatedAt: Date.now() },
+    runState: { status: 'running', tabId: tab.id, prompt, startedAt, credentialSessionId, updatedAt: Date.now() },
   });
-  agentLoop({ tabId: tab.id, messages, apiKey: settings.apiKey, model: settings.model, gatewayUrl: settings.gatewayUrl || '', maxSteps: settings.maxSteps, features: settings.featureFlags || {}, lang: settings.language === 'en' ? 'en' : 'pt' })
+  agentLoop({ tabId: tab.id, messages, apiKey: settings.apiKey, credentialSessionId, model: settings.model, gatewayUrl: settings.gatewayUrl || '', maxSteps: settings.maxSteps, features: settings.featureFlags || {}, lang: settings.language === 'en' ? 'en' : 'pt' })
     .then((result) => {
       if (result.guardRejected) return;
+      if (result.error === 'credential_invalid') {
+        return finishAgentRun(tab.id, prompt, { error: 'credential_invalid', actionsExecuted: [] }, meta, startedAt)
+          .then(() => handleCredentialInvalid(credentialSessionId));
+      }
       return finishAgentRun(tab.id, prompt, result, meta, startedAt);
     })
-    .catch((e) => finishAgentRun(tab.id, prompt, { error: e.message, actionsExecuted: [] }, meta, startedAt));
+    .catch((e) => isCredentialInvalid(e)
+      ? handleCredentialInvalid(credentialSessionId)
+      : finishAgentRun(tab.id, prompt, { error: e.message, actionsExecuted: [] }, meta, startedAt));
 }
 
 async function finishAgentRun(initialTabId, prompt, result, meta, startedAt) {
@@ -214,7 +324,17 @@ function cancelTranslate() {
   return true;
 }
 
-async function runTranslateTurn(tab, settings, text) {
+async function finishCredentialChat(tabId, mode) {
+  await chrome.storage.session.set({
+    chatRunState: { status: 'idle', tabId: tabId ?? null, updatedAt: Date.now() },
+  }).catch(() => {});
+  chrome.runtime.sendMessage({
+    action: 'chatDone',
+    turn: { reply: '', error: 'credential_invalid', actions: [], mode },
+  }).catch(() => {});
+}
+
+async function runTranslateTurn(tab, settings, text, credentialSessionId) {
   const generation = chatGeneration;
   lastChatTabId = tab?.id ?? lastChatTabId;
 
@@ -227,12 +347,15 @@ async function runTranslateTurn(tab, settings, text) {
   await upsertConversation(activeId, thread.messages);
   await chrome.storage.session.set({
     chatActiveId: activeId,
-    chatRunState: { status: 'running', tabId: tab?.id ?? null, updatedAt: Date.now() },
+    chatRunState: { status: 'running', tabId: tab?.id ?? null, credentialSessionId, updatedAt: Date.now() },
   }).catch(() => {});
 
   let reply = '';
   let error = null;
+  let credentialInvalid = false;
   const controller = new AbortController();
+  const unregisterCredentialTask = registerCredentialTask(credentialSessionId, () => controller.abort());
+  if (!unregisterCredentialTask) return;
   translateAbort = controller;
   const startedAt = Date.now();
   try {
@@ -261,8 +384,10 @@ async function runTranslateTurn(tab, settings, text) {
     reply = (turn.text || '').trim();
     if (!reply) error = 'O modelo não retornou tradução. Tente novamente.';
   } catch (e) {
+    credentialInvalid = isCredentialInvalid(e);
     error = e.name === 'AbortError' ? 'Tradução interrompida.' : e.message;
   } finally {
+    unregisterCredentialTask();
     if (translateAbort === controller) translateAbort = null;
   }
 
@@ -276,6 +401,11 @@ async function runTranslateTurn(tab, settings, text) {
     }).catch(() => {});
   }
 
+  if (credentialInvalid) {
+    if (generation === chatGeneration) await finishCredentialChat(tab?.id, 'translate');
+    await handleCredentialInvalid(credentialSessionId);
+    return;
+  }
   if (generation !== chatGeneration) return;
 
   thread.messages.push({
@@ -297,7 +427,7 @@ async function runTranslateTurn(tab, settings, text) {
   }).catch(() => {});
 }
 
-async function startChatRun(tab, settings, text, uiMode = 'agent') {
+async function startChatRun(tab, settings, text, credentialSessionId, uiMode = 'agent') {
   const generation = chatGeneration;
   lastChatTabId = tab.id;
   // 'agent' → mode 'chat' (comportamento completo de sempre) · 'chat' → mode 'ask' (somente leitura)
@@ -320,7 +450,7 @@ async function startChatRun(tab, settings, text, uiMode = 'agent') {
   await upsertConversation(activeId, thread.messages);
   await chrome.storage.session.set({
     chatActiveId: activeId,
-    chatRunState: { status: 'running', tabId: tab.id, updatedAt: Date.now() },
+    chatRunState: { status: 'running', tabId: tab.id, credentialSessionId, updatedAt: Date.now() },
   }).catch(() => {});
 
   let result;
@@ -329,6 +459,7 @@ async function startChatRun(tab, settings, text, uiMode = 'agent') {
       tabId: tab.id,
       messages: seed,
       apiKey: settings.apiKey,
+      credentialSessionId,
       model: settings.chatModel || settings.model,
       gatewayUrl: settings.gatewayUrl || '',
       maxSteps: settings.maxSteps,
@@ -341,6 +472,11 @@ async function startChatRun(tab, settings, text, uiMode = 'agent') {
     result = { error: e.message, actionsExecuted: [] };
   }
 
+  if (result.error === 'credential_invalid') {
+    if (generation === chatGeneration) await finishCredentialChat(tab.id, uiMode);
+    await handleCredentialInvalid(credentialSessionId);
+    return;
+  }
   if (generation !== chatGeneration) return;
 
   const reply = result.reply || '';
@@ -366,12 +502,15 @@ async function startChatRun(tab, settings, text, uiMode = 'agent') {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
+  removeLegacyCredentialStorage();
   chrome.storage.local.get(['model'], (r) => {
     if (!r.model) chrome.storage.local.set({ model: DEFAULT_MODEL });
   });
 });
+chrome.runtime.onStartup.addListener(removeLegacyCredentialStorage);
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(()=>{});
 chrome.action.setBadgeText({ text: '' });
+removeLegacyCredentialStorage();
 loadLocalConfig();
 
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
@@ -450,6 +589,8 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === 'chat') {
+    const credential = requireCredentialSession(req, sender);
+    if (credential.error) { sendResponse(credential); return true; }
     withTargetTab(req.tabId, (tab) => {
       if (!tab) { sendResponse({ error: 'Nenhuma aba ativa' }); return; }
       if (isRestrictedUrl(tab.url)) {
@@ -460,14 +601,12 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
         return;
       }
-      chrome.storage.local.get(['apiKey', 'model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language'], (s) => {
-        if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
-
+      chrome.storage.local.get(['model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language'], (s) => {
         if (anyLoopRunning() || isBatchRunning()) {
           sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
           return;
         }
-        startAgentRun(tab, s, req.messages, req.meta || null);
+        startAgentRun(tab, { ...s, apiKey: credential.apiKey }, req.messages, req.meta || null, credential.credentialSessionId);
         sendResponse({ started: true, tabId: tab.id });
       });
     });
@@ -475,6 +614,8 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === 'runBatch') {
+    const credential = requireCredentialSession(req, sender);
+    if (credential.error) { sendResponse(credential); return true; }
     withTargetTab(req.tabId, (tab) => {
       if (!tab) { sendResponse({ error: 'Nenhuma aba ativa' }); return; }
       if (isRestrictedUrl(tab.url)) {
@@ -487,14 +628,13 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
         return;
       }
-      chrome.storage.local.get(['apiKey', 'model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language'], (s) => {
-        if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
+      chrome.storage.local.get(['model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language'], (s) => {
         if (anyLoopRunning() || isBatchRunning()) {
           sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
           return;
         }
         const parallel = Math.max(1, Math.min(4, parseInt(req.parallel, 10) || 1));
-        runBatch({ tabId: tab.id, items, settings: s, parallel }).catch(() => {});
+        runBatch({ tabId: tab.id, items, settings: { ...s, apiKey: credential.apiKey }, credentialSessionId: credential.credentialSessionId, parallel }).catch(() => {});
         sendResponse({ started: true, total: items.length, tabId: tab.id });
       });
     });
@@ -583,11 +723,15 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === 'suggestTests') {
+    const credential = requireCredentialSession(req, sender);
+    if (credential.error) { sendResponse(credential); return true; }
     withTargetTab(req.tabId, (tab) => {
       if (!tab || isRestrictedUrl(tab.url)) { sendResponse({ error: 'Nenhuma aba válida ativa — abra a página que quer analisar' }); return; }
       if (anyLoopRunning() || isBatchRunning()) { sendResponse({ error: 'Aguarde a execução em andamento terminar' }); return; }
-      chrome.storage.local.get(['apiKey', 'model', 'gatewayUrl'], async (s) => {
-        if (!s.apiKey) { sendResponse({ error: 'Configure a API Key no Dashboard (⚙️)' }); return; }
+      chrome.storage.local.get(['model', 'gatewayUrl'], async (s) => {
+        const controller = new AbortController();
+        const unregisterCredentialTask = registerCredentialTask(credential.credentialSessionId, () => controller.abort());
+        if (!unregisterCredentialTask) { sendResponse({ error: 'credential_required' }); return; }
         try {
           const page = await scanPage(tab.id);
           if (!page) throw new Error('Não foi possível ler a página — recarregue-a e tente novamente');
@@ -600,7 +744,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
               content: `Página em teste:\nURL: ${page.url}\nTítulo: ${page.title}\n\nElementos interativos:\n${elements}\n\nTexto visível (parcial):\n${(page.visibleText || '').slice(0, 3000)}`,
             }],
             system: 'Você é um QA sênior fazendo teste exploratório. Analise a página e sugira de 3 a 5 test cases valiosos e EXECUTÁVEIS por um agente de browser (passos concretos, cada um terminando com uma verificação). Responda APENAS com um array JSON válido, sem markdown e sem texto fora do JSON: [{"name": "título curto do teste", "prompt": "1. passo...\\n2. passo...\\n3. Verifique que ..."}]',
-            apiKey: s.apiKey, model: s.model, gatewayUrl: s.gatewayUrl || '',
+            apiKey: credential.apiKey, model: s.model, gatewayUrl: s.gatewayUrl || '', signal: controller.signal,
           });
           const match = (turn.text || '').match(/\[[\s\S]*\]/);
           const suggestions = match
@@ -609,7 +753,12 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           if (suggestions.length === 0) throw new Error('O modelo não retornou sugestões válidas — tente novamente');
           sendResponse({ success: true, suggestions });
         } catch (e) {
-          sendResponse({ error: e.message });
+          if (isCredentialInvalid(e)) {
+            await handleCredentialInvalid(credential.credentialSessionId);
+            sendResponse({ error: 'credential_invalid' });
+          } else sendResponse({ error: e.message });
+        } finally {
+          unregisterCredentialTask();
         }
       });
     });
@@ -662,16 +811,17 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === 'chatMessage') {
+    const credential = requireCredentialSession(req, sender);
+    if (credential.error) { sendResponse(credential); return true; }
     const mode = normalizeChatMode(req.mode);
     const text = String(req.text || '').trim();
 
     // O Tradutor não toca na página: funciona em qualquer aba, inclusive chrome:// e sem aba nenhuma.
     if (mode === 'translate') {
       if (!text) { sendResponse({ error: 'Mensagem vazia' }); return true; }
-      chrome.storage.local.get(['apiKey', 'model', 'chatModel', 'gatewayUrl'], (s) => {
-        if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
+      chrome.storage.local.get(['model', 'chatModel', 'gatewayUrl'], (s) => {
         withTargetTab(req.tabId, (tab) => {
-          runTranslateTurn(tab || null, s, text).catch(() => {});
+          runTranslateTurn(tab || null, { ...s, apiKey: credential.apiKey }, text, credential.credentialSessionId).catch(() => {});
           sendResponse({ started: true, tabId: tab?.id ?? null });
         });
       });
@@ -689,13 +839,12 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         return;
       }
       if (!text) { sendResponse({ error: 'Mensagem vazia' }); return; }
-      chrome.storage.local.get(['apiKey', 'model', 'chatModel', 'gatewayUrl', 'maxSteps', 'featureFlags', 'accessibilityMode', 'language'], (s) => {
-        if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
+      chrome.storage.local.get(['model', 'chatModel', 'gatewayUrl', 'maxSteps', 'featureFlags', 'accessibilityMode', 'language'], (s) => {
         if (anyLoopRunning() || isBatchRunning()) {
           sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de enviar outro comando.' });
           return;
         }
-        startChatRun(tab, s, text, mode).catch(() => {});
+        startChatRun(tab, { ...s, apiKey: credential.apiKey }, text, credential.credentialSessionId, mode).catch(() => {});
         sendResponse({ started: true, tabId: tab.id });
       });
     });
@@ -703,14 +852,23 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === 'listModels') {
-    chrome.storage.local.get(['apiKey', 'gatewayUrl'], async (s) => {
-      if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
+    const credential = requireCredentialSession(req, sender);
+    if (credential.error) { sendResponse(credential); return true; }
+    chrome.storage.local.get(['gatewayUrl'], async (s) => {
+      const controller = new AbortController();
+      const unregisterCredentialTask = registerCredentialTask(credential.credentialSessionId, () => controller.abort());
+      if (!unregisterCredentialTask) { sendResponse({ error: 'credential_required' }); return; }
       try {
-        const models = await listGatewayModels({ apiKey: s.apiKey, gatewayUrl: s.gatewayUrl || '' });
+        const models = await listGatewayModels({ apiKey: credential.apiKey, gatewayUrl: s.gatewayUrl || '', signal: controller.signal });
         await chrome.storage.local.set({ chatModelsCache: { models, updatedAt: Date.now() } }).catch(() => {});
         sendResponse({ models });
       } catch (e) {
-        sendResponse({ error: e.message });
+        if (isCredentialInvalid(e)) {
+          await handleCredentialInvalid(credential.credentialSessionId);
+          sendResponse({ error: 'credential_invalid' });
+        } else sendResponse({ error: e.message });
+      } finally {
+        unregisterCredentialTask();
       }
     });
     return true;

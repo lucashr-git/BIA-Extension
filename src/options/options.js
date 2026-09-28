@@ -9,7 +9,6 @@ const $ = (id) => document.getElementById(id);
 // aba Executar usam DEFAULT_MODEL. Um valor antigo em storage.model continua sendo
 // respeitado (ver startAgentRun), para não mudar o comportamento de quem já configurou.
 const FIELDS = {
-  apiKey: 'apiKey',
   gatewayUrl: 'gatewayUrlInput',
   environmentsJson: 'environmentsInput',
   jiraUrl: 'jiraUrl',
@@ -174,7 +173,6 @@ function applyEnglishDashUI() {
     ['.dash-tab[data-tab="features"]', 'text', '🧩 Features'],
     ['.dash-tab[data-tab="templates"]', 'text', '🧰 Templates'],
     ['.dash-tab[data-tab="manual"]', 'text', '📖 Manual'],
-    ['#apiKey', 'placeholder', 'Paste your API Key here'],
     ['#saveBtn', 'text', 'Save settings'],
     ['#zephyrExportBtn', 'text', '⬆ Export'],
     ['#zephyrImportBtn', 'text', '⬇ Import'],
@@ -251,6 +249,7 @@ function applyEnglishDashUI() {
   const hints = [
     // Aplicado com textContent, então nada de HTML aqui — sairia literal.
     ['O modelo é escolhido direto no chat', 'The model is picked right in the chat, in the selector next to the clock — each conversation can use a different one. Automated runs follow the "Agent model" setting below.'],
+    ['O acesso ao gateway é informado', 'Gateway access is entered in the Bia side panel.'],
     ['O Chrome só grava dentro de Downloads', 'Chrome only saves inside Downloads without opening the folder picker — check "Ask" to choose any folder each time.'],
     ['Vazio = API direta', 'Empty = direct Anthropic API. Any compatible gateway works — the API key must match the configured provider.'],
     ['Variáveis disponíveis como', 'Variables available as {{name}} in the test case. The active environment is picked in the panel\'s Run tab.'],
@@ -730,7 +729,7 @@ const MANUAL_EN = `
 <section>
   <h2>🛡️ Security and privacy</h2>
   <ul>
-    <li>API keys and tokens live only in <code>chrome.storage.local</code> — never synced.</li>
+    <li>Gateway access is entered in the Bia side panel and remains available while Chrome is running; enter it again after a restart, reload, or update.</li>
     <li>Sensitive data (valid cards, CPF/CNPJ, JWT, emails) is masked before reaching the model.</li>
     <li>Destructive actions are blocked without explicit instruction; sensitive actions require confirmation.</li>
     <li>Page content is treated as data, never as instruction (anti prompt-injection).</li>
@@ -840,7 +839,7 @@ function renderManual() {
 <section>
   <h2>🛡️ Segurança e privacidade</h2>
   <ul>
-    <li>API keys e tokens ficam só no <code>chrome.storage.local</code> — nunca são sincronizados.</li>
+    <li>O acesso ao gateway é informado no painel lateral da Bia e fica disponível enquanto o Chrome estiver aberto; informe novamente após reiniciar, recarregar ou atualizar.</li>
     <li>Dados sensíveis (cartões válidos, CPF/CNPJ, JWT, e-mails) são mascarados antes de ir ao modelo.</li>
     <li>Ações destrutivas são bloqueadas sem instrução explícita; ações sensíveis pedem confirmação.</li>
     <li>Conteúdo da página é tratado como dado, nunca como instrução (anti prompt-injection).</li>
@@ -883,8 +882,6 @@ function loadAll() {
 }
 
 function saveAll() {
-  const apiKey = $(FIELDS.apiKey).value.trim();
-
   const envParsed = parseEnvironments($(FIELDS.environmentsJson).value);
   if (envParsed.error) { showStatus(`${tt('Ambientes', 'Environments')}: ${envParsed.error}`, 'error'); return; }
 
@@ -896,7 +893,6 @@ function saveAll() {
   }
 
   chrome.storage.local.set({
-    apiKey,
     gatewayUrl,
     maxSteps: clampMaxSteps($('maxStepsInput').value),
     environmentsJson: $(FIELDS.environmentsJson).value.trim(),
@@ -909,9 +905,7 @@ function saveAll() {
     zephyrProjectKey: $(FIELDS.zephyrProjectKey).value.trim().toUpperCase(),
   }, () => {
     if (chrome.runtime.lastError) { showStatus(tt(`Erro ao salvar: ${chrome.runtime.lastError.message}`, `Error saving: ${chrome.runtime.lastError.message}`), 'error'); return; }
-    showStatus(apiKey
-      ? tt('✓ Configurações salvas', '✓ Settings saved')
-      : tt('✓ Salvo — insira a API Key para poder executar testes', '✓ Saved — enter the API Key to run tests'), 'success');
+    showStatus(tt('✓ Configurações salvas', '✓ Settings saved'), 'success');
   });
 }
 

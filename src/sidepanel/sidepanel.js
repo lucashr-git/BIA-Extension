@@ -33,6 +33,9 @@ let accessibilityMode = false;
 let micRecognition    = null;
 let micListening      = false;
 let uiLang            = 'pt';
+let credentialSessionId = '';
+let credentialPort = null;
+let credentialReconnectTimer = null;
 
 const featEnabled = (key) => featureFlags[key] !== false;
 
@@ -147,8 +150,15 @@ const closeChatHistory   = $('closeChatHistory');
 const accessBtn          = $('accessBtn');
 const chatMicBtn         = $('chatMicBtn');
 const srAnnouncer        = $('srAnnouncer');
+const credentialGate     = $('credentialGate');
+const credentialForm     = $('credentialForm');
+const credentialInput    = $('credentialInput');
+const credentialSubmit   = $('credentialSubmit');
+const credentialError    = $('credentialError');
+const credentialSwitchBtn = $('credentialSwitchBtn');
 
 document.addEventListener('DOMContentLoaded', () => {
+  initCredentialSession();
   chrome.storage.local.get(['language'], (r) => {
     uiLang = r.language === 'en' ? 'en' : 'pt';
     if (uiLang === 'en') applyEnglishUI();
@@ -165,6 +175,89 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAccessibilityMode();
   });
 });
+
+function showCredentialGate(message = '') {
+  credentialSessionId = '';
+  credentialSwitchBtn.classList.add('hidden');
+  credentialGate.classList.remove('hidden');
+  credentialInput.value = '';
+  credentialInput.focus();
+  credentialError.textContent = message;
+  credentialError.classList.toggle('hidden', !message);
+}
+
+function credentialPayload(message) {
+  return credentialSessionId ? { ...message, credentialSessionId } : message;
+}
+
+function connectCredentialPort() {
+  credentialPort = chrome.runtime.connect({ name: 'bia-credential-session' });
+  credentialPort.onMessage.addListener((message) => {
+    if (message?.type === 'credentialSessionReady' && message.credentialSessionId) {
+      credentialSessionId = message.credentialSessionId;
+      credentialGate.classList.add('hidden');
+      credentialSwitchBtn.classList.remove('hidden');
+      credentialSubmit.disabled = false;
+      credentialSubmit.textContent = 'Conectar';
+      credentialError.classList.add('hidden');
+    } else if (isCredentialError(message) || message?.type === 'credentialSessionRejected') {
+      credentialSubmit.disabled = false;
+      credentialSubmit.textContent = 'Conectar';
+      showCredentialGate(message.message || 'Não foi possível validar a credencial.');
+    }
+  });
+  credentialPort.onDisconnect.addListener(() => {
+    credentialPort = null;
+    credentialSessionId = '';
+    credentialGate.classList.remove('hidden');
+    credentialSubmit.disabled = true;
+    credentialSubmit.textContent = 'Reconectando…';
+    clearTimeout(credentialReconnectTimer);
+    credentialReconnectTimer = setTimeout(() => {
+      connectCredentialPort();
+    }, 100);
+  });
+  credentialPort.postMessage({ type: 'credentialSessionStart' });
+}
+
+function initCredentialSession() {
+  credentialForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const apiKey = credentialInput.value.trim();
+    if (!apiKey || !credentialPort) return;
+    credentialSessionId = '';
+    credentialSubmit.disabled = true;
+    credentialSubmit.textContent = 'Conectando…';
+    credentialError.classList.add('hidden');
+    credentialPort.postMessage({ type: 'credentialSessionStart', apiKey });
+  });
+  credentialSwitchBtn.addEventListener('click', endCredentialSession);
+  connectCredentialPort();
+}
+
+function isCredentialError(response) {
+  const code = response?.errorCode || response?.error || response?.code;
+  return code === 'credential_invalid' || code === 'credential_required';
+}
+
+function endCredentialSession() {
+  if (credentialPort) {
+    credentialPort.postMessage({
+      type: 'credentialSessionEnd',
+      ...(credentialSessionId ? { credentialSessionId } : {}),
+    });
+  }
+  credentialSwitchBtn.classList.add('hidden');
+  showCredentialGate('API Key desconectada. Digite uma nova credencial para continuar.');
+}
+
+function handleCredentialResponse(response) {
+  if (isCredentialError(response)) {
+    showCredentialGate('A credencial expirou ou não foi aceita. Digite-a novamente.');
+    return true;
+  }
+  return false;
+}
 
 let themeMode = 'system';
 const systemDarkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -205,6 +298,10 @@ function showRunError(msg) {
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
+  if (isCredentialError(msg)) {
+    showCredentialGate('A credencial expirou ou não foi aceita. Digite-a novamente.');
+    return;
+  }
   if (msg.action === 'agentStatus' && agentRunning) {
     updateRunningStatus(msg.text);
     addLiveStep(msg.text);
@@ -273,7 +370,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 function answerConfirmation(approved) {
   if (!pendingConfirmId) return;
-  chrome.runtime.sendMessage({ action: 'agentConfirmResponse', id: pendingConfirmId, approved });
+  chrome.runtime.sendMessage(credentialPayload({ action: 'agentConfirmResponse', id: pendingConfirmId, approved }));
   pendingConfirmId = null;
   confirmBar.classList.add('hidden');
   addLiveStep(approved ? '✅ Ação sensível aprovada por você' : '🚫 Ação sensível negada por você');
@@ -357,6 +454,11 @@ function setNodeText(el, text) {
 
 function applyEnglishUI() {
   const ops = [
+    ['#credentialSwitchBtn', 'text', 'Change API key'],
+    ['#credentialGateTitle', 'text', 'Connect to gateway'],
+    ['.credential-gate-text', 'text', 'Enter your API key or JWT to use Bia. It remains available while Chrome is running, so reopening the panel will not ask again. It will be requested after Chrome restarts, reloads, or updates.'],
+    ['#credentialInput', 'placeholder', 'API key or JWT'],
+    ['#credentialSubmit', 'text', 'Connect'],
     ['.tab-btn[data-tab="run"] .tab-label', 'text', 'Run'],
     ['.tab-btn[data-tab="library"] .tab-label', 'text', 'Tests'],
     ['.tab-btn[data-tab="inspect"] .tab-label', 'text', 'Inspector'],
@@ -999,11 +1101,11 @@ async function sendChatMessage() {
 function stopChat() {
   if (!chatRunning) return;
   appendChatActivity(t('stopping'));
-  chrome.runtime.sendMessage({ action: 'stopAgent' }).catch(() => {});
+  chrome.runtime.sendMessage(credentialPayload({ action: 'stopAgent' }), () => {});
 }
 
 async function resetChat() {
-  if (chatRunning) chrome.runtime.sendMessage({ action: 'stopAgent' }).catch(() => {});
+  if (chatRunning) chrome.runtime.sendMessage(credentialPayload({ action: 'stopAgent' }), () => {});
   await sendMsg('chatReset', {}, 5000);
   clearChatView();
   setChatRunning(false);
@@ -1023,7 +1125,7 @@ function hideChatConfirm() {
 
 function answerChatConfirmation(approved) {
   if (!chatPendingConfirmId) return;
-  chrome.runtime.sendMessage({ action: 'agentConfirmResponse', id: chatPendingConfirmId, approved });
+  chrome.runtime.sendMessage(credentialPayload({ action: 'agentConfirmResponse', id: chatPendingConfirmId, approved }));
   hideChatConfirm();
   appendChatActivity(approved ? t('approvedByYou') : t('deniedByYou'));
 }
@@ -2079,7 +2181,8 @@ async function runDebug() {
     }
 
     const result = await new Promise(r =>
-      chrome.runtime.sendMessage({ action: 'qaDebug', tabId: tab.id }, (res) => {
+      chrome.runtime.sendMessage(credentialPayload({ action: 'qaDebug', tabId: tab.id }), (res) => {
+        handleCredentialResponse(res);
         if (chrome.runtime.lastError) {
           r({ success: false, error: chrome.runtime.lastError.message });
         } else {
@@ -2787,7 +2890,7 @@ function setupListeners() {
   });
 
   stopBtn.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ action: 'stopAgent' });
+    chrome.runtime.sendMessage(credentialPayload({ action: 'stopAgent' }), () => {});
     userStopped = true;
     confirmBar.classList.add('hidden');
     pendingConfirmId = null;
@@ -2863,7 +2966,7 @@ function setupListeners() {
 
   batchStopBtn.addEventListener('click', () => {
     userStopped = true;
-    chrome.runtime.sendMessage({ action: 'stopAgent' });
+    chrome.runtime.sendMessage(credentialPayload({ action: 'stopAgent' }), () => {});
     batchStatusText.textContent = 'Parando o lote — encerrando o teste atual...';
     addBatchProgressLine('🛑 Parada solicitada — o teste em execução será concluído/interrompido');
   });
@@ -2898,7 +3001,7 @@ function initTabGrouping() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs?.find(t => !isRestrictedUrl(t.url));
       if (!tab) { if (++attempts < 8) setTimeout(tryGroup, 400); return; }
-      chrome.runtime.sendMessage({ action: 'groupCurrentTab', tabId: tab.id }, (res) => {
+      chrome.runtime.sendMessage(credentialPayload({ action: 'groupCurrentTab', tabId: tab.id }), (res) => {
         if (chrome.runtime.lastError || (res?.error && !res.error.includes('restrita'))) {
           if (++attempts < 8) setTimeout(tryGroup, 400);
         }
@@ -2911,10 +3014,10 @@ function initTabGrouping() {
 function sendMsg(action, params = {}, timeoutMs = 150_000) {
   return new Promise(resolve => {
     const timer = setTimeout(() => resolve(null), timeoutMs);
-    chrome.runtime.sendMessage({ action, ...params }, r => {
+    chrome.runtime.sendMessage(credentialPayload({ action, ...params }), r => {
       clearTimeout(timer);
       if (chrome.runtime.lastError) resolve(null);
-      else resolve(r);
+      else { handleCredentialResponse(r); resolve(r); }
     });
   });
 }

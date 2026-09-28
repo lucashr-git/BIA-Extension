@@ -1,5 +1,93 @@
 export const attachedTabs = new Set();
 
+const credentialSessions = new Map();
+
+function newCredentialSessionId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return `credential-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function clearCredentialSessionArtifacts(credentialSessionId) {
+  if (typeof chrome === 'undefined' || !chrome.storage?.session) return;
+  try {
+    chrome.storage.session.get(['pendingConfirm', 'runState', 'chatRunState', 'batchState'])
+      .then((stored) => {
+        const keys = ['pendingConfirm', 'runState', 'chatRunState', 'batchState']
+          .filter((key) => stored[key]?.credentialSessionId === credentialSessionId);
+        if (keys.length) chrome.storage.session.remove(keys).catch(() => {});
+      })
+      .catch(() => {});
+  } catch (_) {}
+}
+
+export function createCredentialSession(port, documentId, senderUrl, apiKey) {
+  if (!port || typeof documentId !== 'string' || !documentId || typeof senderUrl !== 'string' || !senderUrl || typeof apiKey !== 'string' || !apiKey.trim()) {
+    return null;
+  }
+  const credentialSessionId = newCredentialSessionId();
+  credentialSessions.set(credentialSessionId, {
+    port,
+    documentId,
+    senderUrl,
+    apiKey: apiKey.trim(),
+    connected: true,
+    tasks: new Set(),
+  });
+  return credentialSessionId;
+}
+
+export function requireCredentialSession(req, sender) {
+  const credentialSessionId = typeof req?.credentialSessionId === 'string'
+    ? req.credentialSessionId
+    : '';
+  const session = credentialSessions.get(credentialSessionId);
+  if (!session || !session.connected || session.documentId !== sender?.documentId || session.senderUrl !== sender?.url || !session.port) {
+    return { error: 'credential_required' };
+  }
+  return { credentialSessionId, apiKey: session.apiKey };
+}
+
+export function registerCredentialTask(credentialSessionId, cancel) {
+  const session = credentialSessions.get(credentialSessionId);
+  if (!session?.connected || typeof cancel !== 'function') return null;
+  const task = { cancel };
+  session.tasks.add(task);
+  return () => session.tasks.delete(task);
+}
+
+export function invalidateCredentialSession(credentialSessionId) {
+  const session = credentialSessions.get(credentialSessionId);
+  if (!session) return false;
+
+  // Invalidate and drop the key before cancelling work so no new task can use it.
+  session.connected = false;
+  credentialSessions.delete(credentialSessionId);
+  session.apiKey = null;
+  clearCredentialSessionArtifacts(credentialSessionId);
+  cancelConfirmationsForCredentialSession(credentialSessionId);
+  const tasks = [...session.tasks];
+  session.tasks.clear();
+  for (const task of tasks) {
+    try { task.cancel(); } catch (_) {}
+  }
+  return true;
+}
+
+export function invalidateCredentialSessionsForPort(port) {
+  for (const [credentialSessionId, session] of credentialSessions) {
+    if (session.port === port) invalidateCredentialSession(credentialSessionId);
+  }
+}
+
+export async function configureTrustedCredentialStorage(setAccessLevel) {
+  try {
+    await setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 const sessionLogs = new Map();
 const cancelledSessions = new Set();
 const activeAborts = new Map();
@@ -71,13 +159,17 @@ export function clearSession(tabId) {
 
 const pendingConfirmations = new Map();
 
-export function createConfirmation(id, tabId, timeoutMs = 120000) {
+export function createConfirmation(id, tabId, credentialSessionId, timeoutMs = 120000) {
+  if (typeof credentialSessionId === 'number') {
+    timeoutMs = credentialSessionId;
+    credentialSessionId = undefined;
+  }
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pendingConfirmations.delete(id);
       resolve({ approved: false, timedOut: true });
     }, timeoutMs);
-    pendingConfirmations.set(id, { resolve, timer, tabId });
+    pendingConfirmations.set(id, { resolve, timer, tabId, credentialSessionId });
   });
 }
 
@@ -101,6 +193,15 @@ export function cancelAllConfirmations() {
 export function cancelConfirmationsForTab(tabId) {
   for (const [id, pending] of pendingConfirmations) {
     if (pending.tabId !== tabId) continue;
+    clearTimeout(pending.timer);
+    pending.resolve({ approved: false, timedOut: false, cancelled: true });
+    pendingConfirmations.delete(id);
+  }
+}
+
+export function cancelConfirmationsForCredentialSession(credentialSessionId) {
+  for (const [id, pending] of pendingConfirmations) {
+    if (pending.credentialSessionId !== credentialSessionId) continue;
     clearTimeout(pending.timer);
     pending.resolve({ approved: false, timedOut: false, cancelled: true });
     pendingConfirmations.delete(id);
