@@ -11,7 +11,7 @@ import { recordRuns } from './history.js';
 import { captureScreen } from './page.js';
 import { scanPage } from './contentBridge.js';
 import { callClaude, listGatewayModels, EFFORT_LOW } from './gateway.js';
-import { getStoredConfig, setStoredConfig, migrateSessionOnlyConfig } from '../shared/storage.js';
+import { storageGet, storageSet, migrateLegacySecretsFromLocal } from '../shared/storage.js';
 
 const CONFIG_FIELDS = {
   apiKey:           'DEFAULT_API_KEY',
@@ -45,12 +45,13 @@ async function loadLocalConfig() {
     if (value) updates[key] = value;
   }
   if (Object.keys(updates).length === 0) return;
-  const stored = await getStoredConfig(Object.keys(updates)).catch(() => ({}));
-  const toSet = {};
-  for (const [k, v] of Object.entries(updates)) {
-    if (!stored[k]) toSet[k] = v;
-  }
-  if (Object.keys(toSet).length > 0) await setStoredConfig(toSet);
+  storageGet(Object.keys(updates), (stored) => {
+    const toSet = {};
+    for (const [k, v] of Object.entries(updates)) {
+      if (!stored[k]) toSet[k] = v;
+    }
+    if (Object.keys(toSet).length > 0) storageSet(toSet);
+  });
 }
 
 function withTargetTab(reqTabId, cb) {
@@ -372,7 +373,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(()=>{});
 chrome.action.setBadgeText({ text: '' });
-migrateSessionOnlyConfig().catch(() => {});
+migrateLegacySecretsFromLocal().catch(() => {});
 loadLocalConfig();
 
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
@@ -461,7 +462,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
         return;
       }
-      getStoredConfig(['apiKey', 'model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language']).then((s) => {
+      storageGet(['apiKey', 'model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language'], (s) => {
         if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
 
         if (anyLoopRunning() || isBatchRunning()) {
@@ -470,7 +471,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         }
         startAgentRun(tab, s, req.messages, req.meta || null);
         sendResponse({ started: true, tabId: tab.id });
-      }).catch((e) => sendResponse({ error: e.message }));
+      });
     });
     return true;
   }
@@ -488,7 +489,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
         return;
       }
-      getStoredConfig(['apiKey', 'model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language']).then((s) => {
+      storageGet(['apiKey', 'model', 'gatewayUrl', 'maxSteps', 'featureFlags', 'language'], (s) => {
         if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
         if (anyLoopRunning() || isBatchRunning()) {
           sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de iniciar outra.' });
@@ -497,7 +498,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         const parallel = Math.max(1, Math.min(4, parseInt(req.parallel, 10) || 1));
         runBatch({ tabId: tab.id, items, settings: s, parallel }).catch(() => {});
         sendResponse({ started: true, total: items.length, tabId: tab.id });
-      }).catch((e) => sendResponse({ error: e.message }));
+      });
     });
     return true;
   }
@@ -534,7 +535,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   if (req.action === 'jiraGetIssue') {
-    getStoredConfig(['jiraUrl', 'jiraEmail', 'jiraToken']).then(async (s) => {
+    storageGet(['jiraUrl', 'jiraEmail', 'jiraToken'], async (s) => {
       if (!s.jiraUrl || !s.jiraToken) {
         sendResponse({ error: 'Configuração Jira incompleta. Preencha URL e token em ⚙️ Configurações.' });
         return;
@@ -545,12 +546,12 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       } catch (e) {
         sendResponse({ error: e.message });
       }
-    }).catch((e) => sendResponse({ error: e.message }));
+    });
     return true;
   }
 
   if (req.action === 'createJiraIssue') {
-    getStoredConfig(['jiraUrl', 'jiraEmail', 'jiraToken', 'jiraProjectKey']).then(async (s) => {
+    storageGet(['jiraUrl', 'jiraEmail', 'jiraToken', 'jiraProjectKey'], async (s) => {
       if (!s.jiraUrl || !s.jiraToken || !s.jiraProjectKey) {
         sendResponse({ error: 'Configuração Jira incompleta. Preencha URL, token e project key em ⚙️ (e-mail só é necessário para API Token Atlassian)' });
         return;
@@ -579,7 +580,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       } catch(e) {
         sendResponse({ error: e.message });
       }
-    }).catch((e) => sendResponse({ error: e.message }));
+    });
     return true;
   }
 
@@ -587,7 +588,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     withTargetTab(req.tabId, (tab) => {
       if (!tab || isRestrictedUrl(tab.url)) { sendResponse({ error: 'Nenhuma aba válida ativa — abra a página que quer analisar' }); return; }
       if (anyLoopRunning() || isBatchRunning()) { sendResponse({ error: 'Aguarde a execução em andamento terminar' }); return; }
-      getStoredConfig(['apiKey', 'model', 'gatewayUrl']).then(async (s) => {
+      storageGet(['apiKey', 'model', 'gatewayUrl'], async (s) => {
         if (!s.apiKey) { sendResponse({ error: 'Configure a API Key no Dashboard (⚙️)' }); return; }
         try {
           const page = await scanPage(tab.id);
@@ -612,13 +613,13 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         } catch (e) {
           sendResponse({ error: e.message });
         }
-      }).catch((e) => sendResponse({ error: e.message }));
+      });
     });
     return true;
   }
 
   if (req.action === 'zephyrImport' || req.action === 'zephyrListCycles' || req.action === 'zephyrPushResult' || req.action === 'zephyrExport') {
-    getStoredConfig(['zephyrBaseUrl', 'zephyrToken', 'zephyrProjectKey']).then(async (s) => {
+    storageGet(['zephyrBaseUrl', 'zephyrToken', 'zephyrProjectKey'], async (s) => {
       if (!s.zephyrToken || !s.zephyrProjectKey) {
         sendResponse({ error: 'Configuração Zephyr incompleta. Preencha o API Token e a Project Key no Dashboard (⚙️).' });
         return;
@@ -658,7 +659,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       } catch (e) {
         sendResponse({ error: e.message });
       }
-    }).catch((e) => sendResponse({ error: e.message }));
+    });
     return true;
   }
 
@@ -669,13 +670,13 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     // O Tradutor não toca na página: funciona em qualquer aba, inclusive chrome:// e sem aba nenhuma.
     if (mode === 'translate') {
       if (!text) { sendResponse({ error: 'Mensagem vazia' }); return true; }
-      getStoredConfig(['apiKey', 'model', 'chatModel', 'gatewayUrl']).then((s) => {
+      storageGet(['apiKey', 'model', 'chatModel', 'gatewayUrl'], (s) => {
         if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
         withTargetTab(req.tabId, (tab) => {
           runTranslateTurn(tab || null, s, text).catch(() => {});
           sendResponse({ started: true, tabId: tab?.id ?? null });
         });
-      }).catch((e) => sendResponse({ error: e.message }));
+      });
       return true;
     }
 
@@ -690,7 +691,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         return;
       }
       if (!text) { sendResponse({ error: 'Mensagem vazia' }); return; }
-      getStoredConfig(['apiKey', 'model', 'chatModel', 'gatewayUrl', 'maxSteps', 'featureFlags', 'accessibilityMode', 'language']).then((s) => {
+      storageGet(['apiKey', 'model', 'chatModel', 'gatewayUrl', 'maxSteps', 'featureFlags', 'accessibilityMode', 'language'], (s) => {
         if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
         if (anyLoopRunning() || isBatchRunning()) {
           sendResponse({ error: 'Já existe uma execução em andamento. Pare-a antes de enviar outro comando.' });
@@ -698,13 +699,13 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         }
         startChatRun(tab, s, text, mode).catch(() => {});
         sendResponse({ started: true, tabId: tab.id });
-      }).catch((e) => sendResponse({ error: e.message }));
+      });
     });
     return true;
   }
 
   if (req.action === 'listModels') {
-    getStoredConfig(['apiKey', 'gatewayUrl']).then(async (s) => {
+    storageGet(['apiKey', 'gatewayUrl'], async (s) => {
       if (!s.apiKey) { sendResponse({ error: 'Configure a API Key em ⚙️' }); return; }
       try {
         const models = await listGatewayModels({ apiKey: s.apiKey, gatewayUrl: s.gatewayUrl || '' });
@@ -713,7 +714,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       } catch (e) {
         sendResponse({ error: e.message });
       }
-    }).catch((e) => sendResponse({ error: e.message }));
+    });
     return true;
   }
 

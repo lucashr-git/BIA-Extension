@@ -33,6 +33,7 @@
         <div class="form-group">
           <label>API Key</label>
           <input type="password" id="apiKey" placeholder="Cole sua API Key aqui">
+          <p class="form-hint" id="apiKeyHint">🔒 Fica só em memória (sessão do navegador) — ao fechar o Chrome, cole a key novamente.</p>
         </div>
         <div class="form-row">
           <div class="form-group form-narrow">
@@ -113,7 +114,7 @@
         <div class="form-group">
           <label>API Token <a class="link-sm" href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">gerar →</a></label>
           <input type="password" id="jiraToken" placeholder="Token do Jira">
-          <p class="form-hint">E-mail em branco = token usado como Personal Access Token (Jira Server/DC).</p>
+          <p class="form-hint" id="jiraTokenHint">E-mail em branco = token usado como Personal Access Token (Jira Server/DC). 🔒 Token fica só em memória — ao fechar o Chrome, cole-o novamente.</p>
         </div>
       </section>
 
@@ -123,6 +124,7 @@
           <div class="form-group">
             <label>API Token</label>
             <input type="password" id="zephyrToken" placeholder="Token do Zephyr Scale">
+            <p class="form-hint" id="zephyrTokenHint">🔒 Fica só em memória — ao fechar o Chrome, cole o token novamente.</p>
           </div>
           <div class="form-group form-narrow">
             <label>Project Key</label>

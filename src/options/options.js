@@ -2,7 +2,7 @@ import { DEFAULT_MAX_STEPS, clampMaxSteps, sanitizePathSegment, looksLikeUrl } f
 import { parseEnvironments } from '../shared/vars.js';
 import { computeFlakyMap, summarizeMetrics, buildDailyTrend, buildPrioritySuggestions, aggregateBy } from '../shared/insights.js';
 import { TEMPLATE_PACKS } from '../shared/templates.js';
-import { getStoredConfig, setStoredConfig, removeSessionOnlyConfigFromLocal } from '../shared/storage.js';
+import { storageGet, storageSet } from '../shared/storage.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -176,6 +176,9 @@ function applyEnglishDashUI() {
     ['.dash-tab[data-tab="templates"]', 'text', '🧰 Templates'],
     ['.dash-tab[data-tab="manual"]', 'text', '📖 Manual'],
     ['#apiKey', 'placeholder', 'Paste your API Key here'],
+    ['#apiKeyHint', 'text', '🔒 Kept in memory only (browser session) — re-paste it after closing Chrome.'],
+    ['#jiraTokenHint', 'text', 'Blank email = token used as a Personal Access Token (Jira Server/DC). 🔒 Token is kept in memory only — re-paste it after closing Chrome.'],
+    ['#zephyrTokenHint', 'text', '🔒 Kept in memory only — re-paste it after closing Chrome.'],
     ['#saveBtn', 'text', 'Save settings'],
     ['#zephyrExportBtn', 'text', '⬆ Export'],
     ['#zephyrImportBtn', 'text', '⬇ Import'],
@@ -731,7 +734,7 @@ const MANUAL_EN = `
 <section>
   <h2>🛡️ Security and privacy</h2>
   <ul>
-    <li>API keys and tokens live only in <code>chrome.storage.session</code> and are cleared when the browser session ends.</li>
+    <li>API keys and tokens live only in <code>chrome.storage.session</code> — memory only, cleared when you close the browser, never written to disk, never synced.</li>
     <li>Sensitive data (valid cards, CPF/CNPJ, JWT, emails) is masked before reaching the model.</li>
     <li>Destructive actions are blocked without explicit instruction; sensitive actions require confirmation.</li>
     <li>Page content is treated as data, never as instruction (anti prompt-injection).</li>
@@ -841,7 +844,7 @@ function renderManual() {
 <section>
   <h2>🛡️ Segurança e privacidade</h2>
   <ul>
-    <li>API keys e tokens ficam só no <code>chrome.storage.session</code> e são apagados quando a sessão do navegador termina.</li>
+    <li>API keys e tokens ficam só no <code>chrome.storage.session</code> — só em memória, somem ao fechar o navegador, nunca gravados em disco, nunca sincronizados.</li>
     <li>Dados sensíveis (cartões válidos, CPF/CNPJ, JWT, e-mails) são mascarados antes de ir ao modelo.</li>
     <li>Ações destrutivas são bloqueadas sem instrução explícita; ações sensíveis pedem confirmação.</li>
     <li>Conteúdo da página é tratado como dado, nunca como instrução (anti prompt-injection).</li>
@@ -870,7 +873,7 @@ function showStatus(msg, type) {
 }
 
 function loadAll() {
-  getStoredConfig([...Object.keys(FIELDS), 'maxSteps', 'videoAutoSave', 'featureFlags', 'downloadFolder', 'downloadAskWhere']).then((r) => {
+  storageGet([...Object.keys(FIELDS), 'maxSteps', 'videoAutoSave', 'featureFlags', 'downloadFolder', 'downloadAskWhere'], (r) => {
     $('videoAutoSave').checked = r.videoAutoSave === true;
     $('downloadFolder').value = r.downloadFolder || '';
     $('downloadAskWhere').checked = r.downloadAskWhere === true;
@@ -892,28 +895,36 @@ function saveAll() {
   const gatewayUrl = $(FIELDS.gatewayUrl).value.trim().replace(/\/$/, '');
   const jiraUrl = $(FIELDS.jiraUrl).value.trim().replace(/\/$/, '');
   const zephyrBaseUrl = $(FIELDS.zephyrBaseUrl).value.trim().replace(/\/$/, '');
-  for (const [label, url] of [['Gateway URL', gatewayUrl], ['Jira URL', jiraUrl], ['Zephyr Base URL', zephyrBaseUrl]]) {
-    if (!looksLikeUrl(url)) { showStatus(tt(`${label} inválida — use uma URL completa (ex.: https://...)`, `Invalid ${label} — use a full URL (e.g. https://...)`), 'error'); return; }
-  }
 
-  setStoredConfig({
+  // Campos de URL inválidos são simplesmente ignorados (valor antigo é mantido) em vez de
+  // bloquear o salvamento inteiro — digitar uma API Key nova não pode ser perdido por causa
+  // de um campo não relacionado (ver bug: "atualizei a API Key e o chat ainda pede pra configurar").
+  const invalidLabels = [];
+  const toSave = {
     apiKey,
-    gatewayUrl,
     maxSteps: clampMaxSteps($('maxStepsInput').value),
     environmentsJson: $(FIELDS.environmentsJson).value.trim(),
-    jiraUrl,
     jiraEmail: $(FIELDS.jiraEmail).value.trim(),
     jiraToken: $(FIELDS.jiraToken).value.trim(),
     jiraProjectKey: $(FIELDS.jiraProjectKey).value.trim().toUpperCase(),
-    zephyrBaseUrl,
     zephyrToken: $(FIELDS.zephyrToken).value.trim(),
     zephyrProjectKey: $(FIELDS.zephyrProjectKey).value.trim().toUpperCase(),
-  }).then(() => removeSessionOnlyConfigFromLocal()).then(() => {
+  };
+  for (const [label, key, url] of [['Gateway URL', 'gatewayUrl', gatewayUrl], ['Jira URL', 'jiraUrl', jiraUrl], ['Zephyr Base URL', 'zephyrBaseUrl', zephyrBaseUrl]]) {
+    if (looksLikeUrl(url)) toSave[key] = url;
+    else invalidLabels.push(label);
+  }
+
+  storageSet(toSave).then(() => {
+    if (invalidLabels.length > 0) {
+      showStatus(tt(`Salvo. ${invalidLabels.join(', ')} inválida(s) — use uma URL completa (ex.: https://...); valor anterior mantido`, `Saved. Invalid ${invalidLabels.join(', ')} — use a full URL (e.g. https://...); previous value kept`), 'error');
+      return;
+    }
     showStatus(apiKey
       ? tt('✓ Configurações salvas', '✓ Settings saved')
       : tt('✓ Salvo — insira a API Key para poder executar testes', '✓ Saved — enter the API Key to run tests'), 'success');
-  }).catch((e) => {
-    showStatus(tt(`Erro ao salvar: ${e.message}`, `Error saving: ${e.message}`), 'error');
+  }).catch((err) => {
+    showStatus(tt(`Erro ao salvar: ${err.message}`, `Error saving: ${err.message}`), 'error');
   });
 }
 
@@ -964,8 +975,7 @@ async function exportToZephyr() {
     status.textContent = tt('⚠️ Preencha o API Token e a Project Key do Zephyr primeiro.', '⚠️ Fill in the Zephyr API Token and Project Key first.');
     return;
   }
-  await setStoredConfig(cfg);
-  await removeSessionOnlyConfigFromLocal();
+  await storageSet(cfg);
   status.textContent = tt('Exportando...', 'Exporting...');
   const res = await sendMsg('zephyrExport', { testId });
   if (res.error) { status.textContent = `⚠️ ${res.error}`; return; }
@@ -981,8 +991,7 @@ async function importFromZephyr() {
 
   const cfg = currentZephyrConfig();
   if (!cfg.zephyrToken || !cfg.zephyrProjectKey) { status.textContent = tt('⚠️ Preencha o API Token e a Project Key do Zephyr primeiro.', '⚠️ Fill in the Zephyr API Token and Project Key first.'); return; }
-  await setStoredConfig(cfg);
-  await removeSessionOnlyConfigFromLocal();
+  await storageSet(cfg);
 
   status.textContent = tt('Importando...', 'Importing...');
   const res = await sendMsg('zephyrImport', { key });

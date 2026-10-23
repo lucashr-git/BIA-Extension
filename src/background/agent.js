@@ -1,4 +1,5 @@
 import { callClaude, EFFORT_HIGH, EFFORT_MEDIUM } from './gateway.js';
+import { storageGet } from '../shared/storage.js';
 import { captureScreen, getPageText, waitForLoad } from './page.js';
 import { notifyStatus } from './status.js';
 import {
@@ -18,7 +19,6 @@ import {
 import { getJiraIssue } from './jira.js';
 import { zephyrExportTestCase } from './zephyr.js';
 import { DEFAULT_MODEL, HAIKU_MODEL, MAX_SCROLLS, clampMaxSteps } from '../shared/constants.js';
-import { getStoredConfig } from '../shared/storage.js';
 
 const HARD_NAVIGATION = new Set(['navigate', 'go_back', 'search']);
 
@@ -708,7 +708,7 @@ async function requestUserConfirmation(description, tabId) {
 async function runIntegrationTool(act) {
   try {
     if (act.type === 'jira_get_issue') {
-      const s = await getStoredConfig(['jiraUrl', 'jiraEmail', 'jiraToken']);
+      const s = await storageGet(['jiraUrl', 'jiraEmail', 'jiraToken']);
       if (!s.jiraUrl || !s.jiraToken) {
         return '❌ Integração Jira não configurada (URL e token em ⚙️ Configurações). Informe isso ao usuário — NÃO navegue até o Jira como alternativa.';
       }
@@ -716,7 +716,7 @@ async function runIntegrationTool(act) {
       return issue.text;
     }
     if (act.type === 'zephyr_export_test_case') {
-      const s = await getStoredConfig(['zephyrBaseUrl', 'zephyrToken', 'zephyrProjectKey']);
+      const s = await storageGet(['zephyrBaseUrl', 'zephyrToken', 'zephyrProjectKey']);
       if (!s.zephyrToken || !s.zephyrProjectKey) {
         return '❌ Integração Zephyr não configurada (API Token e Project Key em ⚙️ Configurações). Informe isso ao usuário.';
       }

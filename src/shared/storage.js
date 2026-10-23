@@ -1,54 +1,46 @@
-import { SESSION_ONLY_CONFIG_KEYS } from './constants.js';
+// apiKey/jiraToken/zephyrToken são segredos: ficam em chrome.storage.session (só em memória,
+// somem ao fechar o Chrome) em vez de chrome.storage.local (persiste em disco). Tudo o mais
+// continua em local. Estas funções espelham a assinatura de chrome.storage.local.get/set e
+// roteiam cada chave para a área correta, para não exigir duas chamadas manuais em cada callsite.
+const SESSION_KEYS = new Set(['apiKey', 'jiraToken', 'zephyrToken']);
 
-const SESSION_ONLY_KEY_SET = new Set(SESSION_ONLY_CONFIG_KEYS);
-
-function splitKeys(keys) {
-  const sessionKeys = [];
-  const localKeys = [];
-  for (const key of keys) {
-    if (SESSION_ONLY_KEY_SET.has(key)) sessionKeys.push(key);
-    else localKeys.push(key);
-  }
-  return { sessionKeys, localKeys };
-}
-
-export async function getStoredConfig(keys) {
-  const { sessionKeys, localKeys } = splitKeys(keys);
-  const [localValues, sessionValues] = await Promise.all([
+export function storageGet(keys, callback) {
+  const localKeys = keys.filter((k) => !SESSION_KEYS.has(k));
+  const sessionKeys = keys.filter((k) => SESSION_KEYS.has(k));
+  const promise = Promise.all([
     localKeys.length ? chrome.storage.local.get(localKeys) : Promise.resolve({}),
     sessionKeys.length ? chrome.storage.session.get(sessionKeys) : Promise.resolve({}),
-  ]);
-  return { ...localValues, ...sessionValues };
+  ]).then(([local, session]) => ({ ...local, ...session }));
+  if (callback) { promise.then(callback); return; }
+  return promise;
 }
 
-export async function setStoredConfig(values) {
-  const sessionValues = {};
-  const localValues = {};
-  for (const [key, value] of Object.entries(values)) {
-    if (SESSION_ONLY_KEY_SET.has(key)) sessionValues[key] = value;
-    else localValues[key] = value;
+export function storageSet(data) {
+  const localData = {};
+  const sessionData = {};
+  for (const [k, v] of Object.entries(data)) {
+    (SESSION_KEYS.has(k) ? sessionData : localData)[k] = v;
   }
-  await Promise.all([
-    Object.keys(localValues).length ? chrome.storage.local.set(localValues) : Promise.resolve(),
-    Object.keys(sessionValues).length ? chrome.storage.session.set(sessionValues) : Promise.resolve(),
-  ]);
+  const ops = [];
+  if (Object.keys(localData).length) ops.push(chrome.storage.local.set(localData));
+  if (Object.keys(sessionData).length) ops.push(chrome.storage.session.set(sessionData));
+  return Promise.all(ops).then(() => {});
 }
 
-export async function removeSessionOnlyConfigFromLocal() {
-  await chrome.storage.local.remove(SESSION_ONLY_CONFIG_KEYS);
-}
-
-export async function migrateSessionOnlyConfig() {
-  const [legacy, current] = await Promise.all([
-    chrome.storage.local.get(SESSION_ONLY_CONFIG_KEYS),
-    chrome.storage.session.get(SESSION_ONLY_CONFIG_KEYS),
+// Chamado uma vez na partida do service worker: quem já tinha apiKey/jiraToken/zephyrToken
+// gravados em chrome.storage.local (de antes desta migração) tem o valor movido para
+// chrome.storage.session e apagado do local — sem isso, a cópia antiga em disco ficaria
+// para sempre, esvaziando o propósito da migração.
+export async function migrateLegacySecretsFromLocal() {
+  const keys = [...SESSION_KEYS];
+  const [local, session] = await Promise.all([
+    chrome.storage.local.get(keys),
+    chrome.storage.session.get(keys),
   ]);
   const toSession = {};
-  for (const key of SESSION_ONLY_CONFIG_KEYS) {
-    if (!current[key] && legacy[key]) toSession[key] = legacy[key];
+  for (const k of keys) {
+    if (local[k] !== undefined && session[k] === undefined) toSession[k] = local[k];
   }
-  await Promise.all([
-    Object.keys(toSession).length ? chrome.storage.session.set(toSession) : Promise.resolve(),
-    chrome.storage.local.remove(SESSION_ONLY_CONFIG_KEYS),
-  ]);
+  if (Object.keys(toSession).length) await chrome.storage.session.set(toSession);
+  await chrome.storage.local.remove(keys);
 }
